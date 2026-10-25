@@ -1,0 +1,205 @@
+{
+  "domain_type_string": "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+  "notice": "Generated for Phase 1 verification and Phase 2 Solidity interoperability tests.",
+  "receipt_type_string": "Receipt(bytes32 projectId,bytes32 vendorId,bytes32 invoiceId,uint256 invoiceTotal,bytes32 currency,bytes32 category,uint64 issuedAt,bytes32 evidenceCommitment)",
+  "title": "TRACE Phase 1 Canonical Receipt Test Vectors",
+  "vectors": [
+    {
+      "bytes32_encodings": {
+        "category": "0x181c33c2f7284321149af095b2e65d2f9b5238d8002f623b2de823bcd2ab6361",
+        "currency": "0xc4ae21aac0c6549d71dd96035b7e0bdb6c79ebdba8891b666115bc976d16a29e",
+        "evidenceCommitment": "0xb3ef6017388d52a7e5022de3591206ecf5a2b9708a591e1c46e57cd511155b8a",
+        "invoiceId": "0xd5b9febd91bea332feef2751b09d6fd6ea96049cfe8867f14acaf8e3f2445776",
+        "projectId": "0x7dbb56af23a9f86cc3ca4c74f6b851adece803d3e5dc6c04ac71c1db22248197",
+        "vendorId": "0x5630a05711917d01cf29c2ec08b784ebef8441de48e792fc9e7bfd83fc5612a6"
+      },
+      "canonical_receipt": {
+        "category": "WATER_INFRASTRUCTURE",
+        "currency": "USD",
+        "evidence_commitment": "0xb3ef6017388d52a7e5022de3591206ecf5a2b9708a591e1c46e57cd511155b8a",
+        "invoice_id": "INV1042",
+        "invoice_nullifier": "0x367d5d1d87c78e171787107627bf07e725c767d41e479b2217137975994f115b",
+        "invoice_total": 500000,
+        "issued_at": 1714000000,
+        "project_id": "PROJECTKENYAWATER",
+        "vendor_id": "ACMEDRILLINGCORP"
+      },
+      "description": "Standard clean receipt for water infrastructure project",
+      "domain": {
+        "chainId": 31337,
+        "name": "TRACE Receipt Registry",
+        "verifyingContract": "0x1111111111111111111111111111111111111111",
+        "version": "1"
+      },
+      "eip712_digest": "0x6938a06178400f20016974f5b9f2548f7a0e68f77b614113e8428be4a8b149a2",
+      "evidence": {
+        "commitment": "0xb3ef6017388d52a7e5022de3591206ecf5a2b9708a591e1c46e57cd511155b8a",
+        "file_text": "INVOICE #INV-1042: Deep well drilling services in Turkana Basin.",
+        "salt": "0x1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "invoice_nullifier": "0x367d5d1d87c78e171787107627bf07e725c767d41e479b2217137975994f115b",
+      "raw_input": {
+        "category": "water_infrastructure",
+        "currency": "usd",
+        "invoice_id": "INV-1042",
+        "invoice_total": 500000,
+        "issued_at": 1714000000,
+        "project_id": "PROJECT-KENYA-WATER",
+        "vendor_id": "ACME-DRILLING-CORP"
+      },
+      "recovered_signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "signature": "0x0f8f53fdfcd2581ababbe988747d225f6ceae305769feca82f5b2a3d30c5c46636cb8be22673ea915ab771156ab9595ea84c57d253994dd0d2e82c98ed9236ab1c",
+      "test_key_notice": "Public Hardhat Account #0 (TEST ONLY)",
+      "test_signer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vector_id": 1
+    },
+    {
+      "bytes32_encodings": {
+        "category": "0x3f824af65325e9c96a5e23aa7e752e995e0f64f83e32622c05c45f96c18997cf",
+        "currency": "0xfff16d60be267153303bbfa66e593fb8d06e24ea5ef24b6acca5224c2ca6b907",
+        "evidenceCommitment": "0x7bf1bf2a68508ae09d6b478029e14d719a5db28404dcbbe3a66a32f9637c50e9",
+        "invoiceId": "0xd5b9febd91bea332feef2751b09d6fd6ea96049cfe8867f14acaf8e3f2445776",
+        "projectId": "0x78c414ee8060ebe139cda84da79f8a5bf9db5f1bcd6fe20f6704f4e0fce4dfa7",
+        "vendorId": "0xc127ed4402006d77b3dc6e0aeb68adbcedb725db4e83abd6a1312357c06a20aa"
+      },
+      "canonical_receipt": {
+        "category": "FOOD_SUPPLIES",
+        "currency": "EUR",
+        "evidence_commitment": "0x7bf1bf2a68508ae09d6b478029e14d719a5db28404dcbbe3a66a32f9637c50e9",
+        "invoice_id": "INV1042",
+        "invoice_nullifier": "0x7c140831e1fcd4638e7775ec6c3e814c0340aa36241bc5aa9ab400fd627707ea",
+        "invoice_total": 1250000,
+        "issued_at": 1714050000,
+        "project_id": "PROJRELIEF2026",
+        "vendor_id": "GRAINSUPPLIERSLTD"
+      },
+      "description": "Invoice with lowercase text, spaces, and leading zeros in invoice ID",
+      "domain": {
+        "chainId": 31337,
+        "name": "TRACE Receipt Registry",
+        "verifyingContract": "0x1111111111111111111111111111111111111111",
+        "version": "1"
+      },
+      "eip712_digest": "0x68065d32359c05ae13f039ec5d6ca56c8f970fa6a946efbf986209a664eef8ec",
+      "evidence": {
+        "commitment": "0x7bf1bf2a68508ae09d6b478029e14d719a5db28404dcbbe3a66a32f9637c50e9",
+        "file_text": "INVOICE #inv-001042: 50 metric tons emergency sorghum delivery.",
+        "salt": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "invoice_nullifier": "0x7c140831e1fcd4638e7775ec6c3e814c0340aa36241bc5aa9ab400fd627707ea",
+      "raw_input": {
+        "category": "FOOD_SUPPLIES",
+        "currency": "EUR",
+        "invoice_id": "inv-001042",
+        "invoice_total": "1250000",
+        "issued_at": 1714050000,
+        "project_id": "proj relief 2026",
+        "vendor_id": "grain suppliers ltd"
+      },
+      "recovered_signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "signature": "0x9dc904f877be4bf7b8b0df5d2566db5d69bced3510793fb3c999b0a2f821c7da6353f014c2046199f9ca05f7771b441f53cdec3ec27f5cb8dc497c7662c7b22b1c",
+      "test_key_notice": "Public Hardhat Account #0 (TEST ONLY)",
+      "test_signer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vector_id": 2
+    },
+    {
+      "bytes32_encodings": {
+        "category": "0x5d9fef91c414fd7d9e96e87b02c02ecc972e128676c071885af093ef88b52b5e",
+        "currency": "0xaad766fbc07fb357bed9fd8b03b935f2f71fe29fc48f08274bc2a01d7f642afc",
+        "evidenceCommitment": "0xe353548011cb45b9a9dd62fcdd45d85f7773d8fc52f37074827c1548dd82b271",
+        "invoiceId": "0x8c3259ef3af33bca6740cf55b697a4fe490c023d6abf90bea66157fc76fb9d8d",
+        "projectId": "0x4c105bcb8e08164436afdb119bb5561b4755c1fd49027bace030979111adee38",
+        "vendorId": "0x326014f0cbadff4508c774ff4749e6ac847a5e9b7a81faf12f71095d5f4faf09"
+      },
+      "canonical_receipt": {
+        "category": "MEDICAL_SUPPLIES",
+        "currency": "INR",
+        "evidence_commitment": "0xe353548011cb45b9a9dd62fcdd45d85f7773d8fc52f37074827c1548dd82b271",
+        "invoice_id": "MED89",
+        "invoice_nullifier": "0x17d898d7c1da1f295eb6c4d27d488421bf9b66cda2f13613727f9c462b0be532",
+        "invoice_total": 98500000,
+        "issued_at": 1714100000,
+        "project_id": "HEALTHCLINICBIHAR",
+        "vendor_id": "PHARMADIRECT"
+      },
+      "description": "High-value medical emergency supplies in Indian Rupees",
+      "domain": {
+        "chainId": 31337,
+        "name": "TRACE Receipt Registry",
+        "verifyingContract": "0x1111111111111111111111111111111111111111",
+        "version": "1"
+      },
+      "eip712_digest": "0x8ff014cf88a5a9c878edd50b25673c72b5583d368e04d91ba837f577de5974c2",
+      "evidence": {
+        "commitment": "0xe353548011cb45b9a9dd62fcdd45d85f7773d8fc52f37074827c1548dd82b271",
+        "file_text": "INVOICE #MED-00089: Critical antibiotics and surgical supplies.",
+        "salt": "0x3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "invoice_nullifier": "0x17d898d7c1da1f295eb6c4d27d488421bf9b66cda2f13613727f9c462b0be532",
+      "raw_input": {
+        "category": "MEDICAL_SUPPLIES",
+        "currency": "INR",
+        "invoice_id": "MED-00089",
+        "invoice_total": 98500000,
+        "issued_at": 1714100000,
+        "project_id": "HEALTH-CLINIC-BIHAR",
+        "vendor_id": "PHARMA-DIRECT"
+      },
+      "recovered_signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "signature": "0x6532ad5e6599e4aba195317383f1b4017de352c195ee26cb37ce7730fa88a0b401833ebc8917ddaba7608d88710197e1c8f50bad842781cbfdeb86d7d8475c551b",
+      "test_key_notice": "Public Hardhat Account #0 (TEST ONLY)",
+      "test_signer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vector_id": 3
+    },
+    {
+      "bytes32_encodings": {
+        "category": "0x22dcf65f6f4c927111bf387d445843b3cc81345ee83a379296dc4d7039f6536e",
+        "currency": "0xc4ae21aac0c6549d71dd96035b7e0bdb6c79ebdba8891b666115bc976d16a29e",
+        "evidenceCommitment": "0x7563431a4aab04494efca1b1017b264d7dc072db07a47e94456114c6458db5d2",
+        "invoiceId": "0x5b51564f2edcc07dda08cf8b71bc4892cb242fd1fa5e29eb8234500d070dd962",
+        "projectId": "0x2d89dd18312c479e0daeb15780431557bd77544417cc8b5013d6add6d88ad885",
+        "vendorId": "0x0c4db2b58077f1aa7acc25b25164006c1baa26c03c0906571b918b12ebc542cd"
+      },
+      "canonical_receipt": {
+        "category": "EDUCATION",
+        "currency": "USD",
+        "evidence_commitment": "0x7563431a4aab04494efca1b1017b264d7dc072db07a47e94456114c6458db5d2",
+        "invoice_id": "EDU7A9",
+        "invoice_nullifier": "0x71436b34704b20fdae57aea5cf7c145fa9e057f38ab141e521656777b6a7135c",
+        "invoice_total": 75000,
+        "issued_at": 1714150000,
+        "project_id": "SCHOOLS2026",
+        "vendor_id": "GLOBALBOOKSLTD"
+      },
+      "description": "School education supplies with alphanumeric invoice number",
+      "domain": {
+        "chainId": 31337,
+        "name": "TRACE Receipt Registry",
+        "verifyingContract": "0x1111111111111111111111111111111111111111",
+        "version": "1"
+      },
+      "eip712_digest": "0x2ac9695382b6edc852e8d9a08daa593092ac36e4affa51aaf99cb84d73a4b3c5",
+      "evidence": {
+        "commitment": "0x7563431a4aab04494efca1b1017b264d7dc072db07a47e94456114c6458db5d2",
+        "file_text": "INVOICE #EDU-007A009: STEM textbooks and student learning kits.",
+        "salt": "0x4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "invoice_nullifier": "0x71436b34704b20fdae57aea5cf7c145fa9e057f38ab141e521656777b6a7135c",
+      "raw_input": {
+        "category": "EDUCATION",
+        "currency": "USD",
+        "invoice_id": "EDU-007A009",
+        "invoice_total": 75000,
+        "issued_at": 1714150000,
+        "project_id": "SCHOOLS-2026",
+        "vendor_id": "GLOBAL-BOOKS-LTD"
+      },
+      "recovered_signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "signature": "0x08fba214030689c4f3e2d43326c3b58542f0cb4256457053b9a9fe4b9ae4450a397cb77f617b22d5ba9c4300879f2746687a4cdaf7a1da70291282f4b050fedc1b",
+      "test_key_notice": "Public Hardhat Account #0 (TEST ONLY)",
+      "test_signer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vector_id": 4
+    }
+  ],
+  "version": "1.0.0"
+}
