@@ -1,111 +1,160 @@
+/**
+ * TRACE Design Tokens & Global Baseline
+ * Stark Swiss Minimalist aesthetic: restrained, precise, structural, editorial.
+ * Strict flat surfaces, thin dividers, tabular numerals, accessible high-contrast colors.
+ */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* Color Palette */
+  --bg-main: #F9FAFB;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F1F5F9;
+  --text-primary: #0F172A;
+  --text-muted: #64748B;
+  --border-color: #E2E8F0;
+  --border-dark: #CBD5E1;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Semantic State Colors */
+  --color-verified: #059669;
+  --color-verified-bg: #ECFDF5;
+  --color-verified-border: #A7F3D0;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --color-rejected: #DC2626;
+  --color-rejected-bg: #FEF2F2;
+  --color-rejected-border: #FECACA;
+
+  --color-warning: #B45309;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+
+  --color-info: #2563EB;
+  --color-info-bg: #EFF6FF;
+  --color-info-border: #BFDBFE;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Borders & Radius */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-pill: 9999px;
+
+  /* Focus ring */
+  --focus-ring: 2px solid #0F172A;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
-  margin: 0;
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* Typography Helpers */
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+.num-tabular {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
+.micro-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* Base Buttons */
+button {
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  background-color: var(--bg-subtle);
+  border-color: var(--border-dark);
+}
+
+button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tag / Badge Pills */
+.badge {
   display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.badge-verified {
+  background-color: var(--color-verified-bg);
+  color: var(--color-verified);
+  border-color: var(--color-verified-border);
+}
+
+.badge-rejected {
+  background-color: var(--color-rejected-bg);
+  color: var(--color-rejected);
+  border-color: var(--color-rejected-border);
+}
+
+.badge-warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: var(--color-warning-border);
+}
+
+.badge-info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
+  border-color: var(--color-info-border);
+}
+
+.badge-neutral {
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border-color: var(--border-color);
 }

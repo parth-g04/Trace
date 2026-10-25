@@ -146,3 +146,25 @@ class ScenarioRunResponse(BaseModel):
     disbursement_allowed: bool
     checks: Dict[str, bool]
     details: Dict[str, Any]
+
+
+class ClaimRecordResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    claim_id: str
+    project_id: str
+    vendor_id: str
+    invoice_id: str
+    nullifier: str
+    report_id: str
+    claim_amount: int
+    invoice_total: int
+    currency: str
+    category: str
+    issued_at: int
+    evidence_commitment: str
+    signature: str
+    recovered_signer: str
+    status: str
+    submitted_at: int

@@ -202,6 +202,13 @@ def test_post_claims_valid(client):
     assert data["disbursement_allowed"] is True
     assert data["claimed_amount"] == 500000
 
+    # Verify GET /claims returns the recorded claim
+    res_list = client.get("/claims?project_id=WATER-001")
+    assert res_list.status_code == 200
+    claims = res_list.json()
+    assert len(claims) >= 1
+    assert any(c["claim_id"] == data["claim_id"] for c in claims)
+
 
 def test_post_claims_tampered_rejected(client):
     now = int(time.time())

@@ -19,6 +19,7 @@ from backend.app.db import Database, get_db_path
 from backend.app.demo.scenarios import list_demo_scenarios, run_scenario
 from backend.app.models.api import (
     AuditEventResponse,
+    ClaimRecordResponse,
     ClaimResponse,
     ClaimSubmitRequest,
     HealthResponse,
@@ -255,6 +256,19 @@ def submit_claim(req: ClaimSubmitRequest, db: Database = Depends(get_db)):
         else status.HTTP_400_BAD_REQUEST
     )
     return JSONResponse(status_code=status_code, content=resp_model.model_dump())
+
+
+@app.get("/claims", response_model=List[ClaimRecordResponse], tags=["Claims"])
+def list_claims(
+    project_id: Optional[str] = Query(None, description="Filter claims by project ID"),
+    db: Database = Depends(get_db),
+):
+    """
+    Retrieves recorded claims and their verification statuses.
+    Read-only audit endpoint for dashboard and verifier inspection.
+    """
+    rows = db.get_claims(project_id)
+    return [ClaimRecordResponse(**r) for r in rows]
 
 
 @app.post("/projects/{id}/release", response_model=ReleaseResponse, tags=["Escrow"])
