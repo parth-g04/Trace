@@ -100,10 +100,16 @@ def run_scenario(name: str, db: Database) -> Dict[str, Any]:
     escrow = SimulatedEscrowService(db)
     now = int(time.time())
 
-    # Ensure Tranche 1 is released if project is currently unreleased at Tranche 0
-    proj_water = db.get_project("WATER-001")
-    if proj_water and proj_water["current_tranche"] == 0 and not proj_water["is_frozen"]:
-        db.release_next_tranche("WATER-001")
+    # For benign scenarios requiring fund disbursement, ensure Tranche 1 is released if project is unreleased at Tranche 0
+    BENIGN_DISBURSING_SCENARIOS = {
+        "valid_claim",
+        "valid_claim_evidence_omitted",
+        "duplicate_report",
+    }
+    if name in BENIGN_DISBURSING_SCENARIOS:
+        proj_water = db.get_project("WATER-001")
+        if proj_water and proj_water["current_tranche"] == 0 and not proj_water["is_frozen"]:
+            db.release_next_tranche("WATER-001")
 
     if name == "valid_claim":
         rec = Receipt(

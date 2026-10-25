@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 export function ScenarioConsole({
   scenarios,
+  project,
   onRunScenario,
   onResetDemo,
   isRunning,
@@ -82,6 +83,16 @@ export function ScenarioConsole({
           Execute live scenarios to verify cryptographic defenses. Security attacks immediately reject disbursements and trigger project-level escrow freezes.
         </p>
       </div>
+
+      {/* Frozen Project Alert with Documented Reset Guidance */}
+      {project?.is_frozen && (
+        <div className="frozen-scenario-alert">
+          <span className="badge badge-rejected">PROJECT FROZEN</span>
+          <span className="frozen-alert-text">
+            Project is frozen ({project.freeze_reason || 'Security Violation'}). Testing an independent scenario requires a clean state — click <strong>RESET DEMO STATE</strong> above to restore.
+          </span>
+        </div>
+      )}
 
       {/* Scenario Grid */}
       <div className="scenario-grid">

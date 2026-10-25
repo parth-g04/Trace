@@ -853,7 +853,8 @@ class Database:
             cur = conn.execute(
                 """
                 SELECT COUNT(*) FROM audit_events
-                WHERE reason_code = 'INVOICE_REUSED_ACROSS_REPORTS'
+                WHERE event_type = 'CLAIM_REJECTED'
+                  AND reason_code IN ('INVOICE_REUSED_ACROSS_REPORTS', 'INVOICE_ALREADY_FULLY_CLAIMED')
                 """
             )
             duplicate_invoice_attempts_blocked = cur.fetchone()[0]

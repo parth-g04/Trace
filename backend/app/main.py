@@ -8,6 +8,7 @@ simulated purpose-bound escrow release, and multi-hop fund-flow tracing.
 import base64
 from contextlib import asynccontextmanager
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -50,9 +51,12 @@ async def lifespan(app: FastAPI):
     """Initializes database schema and seed state on startup."""
     db = get_db()
     db.init_schema()
-    proj = db.get_project("WATER-001")
-    if not proj:
+    if os.environ.get("TRACE_PERSIST_ON_BOOT") != "1":
         db.reset_demo_state()
+    else:
+        proj = db.get_project("WATER-001")
+        if not proj:
+            db.reset_demo_state()
     yield
 
 
@@ -338,8 +342,14 @@ def get_metrics(db: Database = Depends(get_db)):
     total_discrepancies = 0
     for p in projects:
         events = db.get_flow_events(p["id"])
-        _, disc = TraceGraphReconciler.reconcile(events)
-        total_discrepancies += sum(1 for d in disc if d.severity == "CRITICAL")
+        claims = db.get_claims(p["id"])
+        verified_claim_ids = {c["claim_id"] for c in claims if c["status"] == "VERIFIED"}
+        _, disc = TraceGraphReconciler.reconcile(
+            events,
+            require_matching_vendor_payment=False,
+            verified_claim_ids=verified_claim_ids,
+        )
+        total_discrepancies += len(disc)
 
     metrics["unexplained_trace_discrepancies"] = total_discrepancies
     return MetricsResponse(**metrics)

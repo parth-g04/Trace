@@ -241,3 +241,96 @@ def test_repeatable_reset(scenario_db):
     res3 = run_scenario("valid_claim", scenario_db)
     assert res3["status"] == "VERIFIED"
     assert res3["project_status"] == "ACTIVE"
+
+
+def test_attack_scenarios_do_not_auto_release_tranche(scenario_db):
+    """
+    Requirement 1 & 4:
+    Attack scenarios (out_of_purpose, tampered_amount, forged_signature, unregistered_vendor)
+    must NOT auto-release Tranche 1.
+    From a clean Tranche 0 state, they must evaluate without disbursing escrow funds,
+    leaving released_wei at 0 and current_tranche at 0.
+    """
+    attack_scenarios = [
+        ("out_of_purpose", "CATEGORY_NOT_ALLOWED"),
+        ("tampered_amount", "SIGNER_VENDOR_MISMATCH"),
+        ("forged_signature", "SIGNER_VENDOR_MISMATCH"),
+        ("unregistered_vendor", "UNREGISTERED_VENDOR"),
+    ]
+
+    for sc_name, expected_reason in attack_scenarios:
+        scenario_db.reset_demo_state()
+        res = run_scenario(sc_name, scenario_db)
+        assert res["status"] == "REJECTED"
+        assert res["reason"] == expected_reason
+
+        proj = scenario_db.get_project("WATER-001")
+        assert proj["current_tranche"] == 0
+        assert int(proj["released_wei"]) == 0
+        assert int(proj["verified_spend_wei"]) == 0
+
+        # Confirm no OFFRAMP flow event exists
+        flow_events = scenario_db.get_flow_events("WATER-001")
+        offramp_events = [e for e in flow_events if e["event_type"] == "OFFRAMP"]
+        assert len(offramp_events) == 0
+
+
+def test_duplicate_invoice_metric_increments_by_one(scenario_db):
+    """
+    Requirement 3:
+    The duplicate invoice counter must increment according to actual duplicate attempts,
+    yielding exactly 1 on a single duplicate invoice submission, not 2.
+    """
+    scenario_db.reset_demo_state()
+    res = run_scenario("duplicate_report", scenario_db)
+    assert res["status"] == "REJECTED"
+    assert res["reason"] == "INVOICE_REUSED_ACROSS_REPORTS"
+
+    metrics = scenario_db.get_metrics()
+    assert metrics["duplicate_invoice_attempts_blocked"] == 1
+    assert metrics["valid_claims"] == 1
+    assert metrics["rejected_claims"] == 1
+    assert metrics["frozen_projects"] == 1
+
+
+def test_tranche_release_rules_and_spend_gate(scenario_db):
+    """
+    Requirement 5:
+    From clean state:
+    1. Release Tranche 1 -> Allowed without prior spend.
+    2. Attempt Tranche 2 release -> Blocked (0 spend < 10 ETH released).
+    3. Submit valid claim ($5,000 = 2.5 ETH) -> Verified spend is 2.5 ETH.
+    4. Attempt Tranche 2 release -> Still blocked (2.5 ETH spend < 10 ETH released).
+    5. Freeze project -> Tranche release blocked with PROJECT_FROZEN.
+    """
+    scenario_db.reset_demo_state()
+
+    # 1. Release Tranche 1
+    rel1 = scenario_db.release_next_tranche("WATER-001")
+    assert rel1["status"] == "RELEASED"
+    assert rel1["tranche_number"] == 1
+    assert int(rel1["released_wei"]) == 10 * 10**18
+
+    # 2. Attempt Tranche 2 release -> Insufficient spend
+    rel2_blocked = scenario_db.release_next_tranche("WATER-001")
+    assert rel2_blocked["status"] == "BLOCKED"
+    assert rel2_blocked["reason"] == "INSUFFICIENT_VERIFIED_SPEND"
+
+    # 3. Submit valid claim ($5,000 = 2.5 ETH)
+    res_claim = run_scenario("valid_claim", scenario_db)
+    assert res_claim["status"] == "VERIFIED"
+
+    proj = scenario_db.get_project("WATER-001")
+    assert int(proj["verified_spend_wei"]) == 25 * 10**17  # 2.5 ETH
+
+    # 4. Attempt Tranche 2 release again -> Still blocked (needs 10 ETH, has 2.5 ETH)
+    rel2_still_blocked = scenario_db.release_next_tranche("WATER-001")
+    assert rel2_still_blocked["status"] == "BLOCKED"
+    assert rel2_still_blocked["reason"] == "INSUFFICIENT_VERIFIED_SPEND"
+
+    # 5. Freeze project -> Tranche release blocked with PROJECT_FROZEN
+    scenario_db.freeze_project("WATER-001", "TEST_FREEZE_REASON")
+    rel_frozen = scenario_db.release_next_tranche("WATER-001")
+    assert rel_frozen["status"] == "BLOCKED"
+    assert rel_frozen["reason"] == "PROJECT_FROZEN"
+

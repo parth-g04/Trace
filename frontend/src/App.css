@@ -672,6 +672,23 @@
   margin-bottom: 16px;
 }
 
+.frozen-scenario-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: var(--color-rejected-bg);
+  border: 1px solid var(--color-rejected-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.frozen-alert-text {
+  flex: 1;
+}
+
 .scenario-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -223,6 +223,7 @@ export default function App() {
           {/* Scenario Console for Hackathon Evaluation */}
           <ScenarioConsole
             scenarios={scenarios}
+            project={project}
             onRunScenario={handleRunScenario}
             onResetDemo={handleResetDemo}
             isRunning={isActionInProgress}

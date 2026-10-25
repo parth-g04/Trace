@@ -343,3 +343,80 @@ def test_demo_scenarios_and_reset(client):
     res_reset = client.post("/demo/reset")
     assert res_reset.status_code == 200
     assert res_reset.json()["status"] == "RESET_OK"
+
+
+def test_initial_state_and_scenario_isolation_via_api(client):
+    """
+    Requirements 1, 2, 3, 4:
+    Verifies that via HTTP API:
+    1. Clean demo state is unfrozen, Tranche 0, 0 released, 0 spend, 0 claims, 0 discrepancies.
+    2. out_of_purpose claim rejects with CATEGORY_NOT_ALLOWED, freezes project, but leaves
+       escrow at Tranche 0 (0 ETH released) and generates 0 discrepancies.
+    3. Reset returns project to ACTIVE state.
+    4. Running valid_claim + duplicate_report produces $20,000 off-ramp, $9,500 paid,
+       $10,500 residual fiat, 0 discrepancies, and duplicate_invoice_attempts_blocked == 1.
+    """
+    # 1. Clean reset
+    res_reset = client.post("/demo/reset")
+    assert res_reset.status_code == 200
+
+    proj_init = client.get("/projects/WATER-001").json()
+    assert proj_init["current_tranche"] == 0
+    assert int(proj_init["released_wei"]) == 0
+    assert int(proj_init["verified_spend_wei"]) == 0
+    assert proj_init["is_frozen"] is False
+    assert proj_init["freeze_reason"] is None
+
+    claims_init = client.get("/claims?project_id=WATER-001").json()
+    assert len(claims_init) == 0
+
+    trace_init = client.get("/projects/WATER-001/trace").json()
+    assert len(trace_init["discrepancies"]) == 0
+
+    metrics_init = client.get("/metrics").json()
+    assert metrics_init["valid_claims"] == 0
+    assert metrics_init["rejected_claims"] == 0
+    assert metrics_init["frozen_projects"] == 0
+    assert metrics_init["unexplained_trace_discrepancies"] == 0
+
+    # 2. Run out_of_purpose attack scenario from clean state
+    res_attack = client.post("/demo/scenarios/out_of_purpose/run").json()
+    assert res_attack["status"] == "REJECTED"
+    assert res_attack["reason"] == "CATEGORY_NOT_ALLOWED"
+    assert res_attack["project_status"] == "FROZEN"
+
+    proj_after_attack = client.get("/projects/WATER-001").json()
+    assert proj_after_attack["is_frozen"] is True
+    assert proj_after_attack["current_tranche"] == 0  # Crucial: Did not auto-release!
+    assert int(proj_after_attack["released_wei"]) == 0
+
+    trace_after_attack = client.get("/projects/WATER-001/trace").json()
+    assert len(trace_after_attack["discrepancies"]) == 0  # No unmatched offramp!
+
+    # 3. Documented reset restores state
+    client.post("/demo/reset")
+    proj_restored = client.get("/projects/WATER-001").json()
+    assert proj_restored["is_frozen"] is False
+    assert proj_restored["current_tranche"] == 0
+
+    # 4. Run valid_claim and duplicate_report
+    res_valid = client.post("/demo/scenarios/valid_claim/run").json()
+    assert res_valid["status"] == "VERIFIED"
+
+    res_dup = client.post("/demo/scenarios/duplicate_report/run").json()
+    assert res_dup["status"] == "REJECTED"
+    assert res_dup["reason"] == "INVOICE_REUSED_ACROSS_REPORTS"
+
+    trace_reconciled = client.get("/projects/WATER-001/trace").json()
+    summary = trace_reconciled["summary"]
+    assert summary["total_offramped_usd_cents"] == 2000000  # $20,000
+    assert summary["total_paid_usd_cents"] == 950000        # $9,500
+    assert summary["offramp_residual_usd_cents"] == 1050000  # $10,500 residual fiat
+    assert len(trace_reconciled["discrepancies"]) == 0      # 0 discrepancies
+
+    metrics_reconciled = client.get("/metrics").json()
+    assert metrics_reconciled["valid_claims"] == 2
+    assert metrics_reconciled["rejected_claims"] == 1
+    assert metrics_reconciled["duplicate_invoice_attempts_blocked"] == 1
+    assert metrics_reconciled["unexplained_trace_discrepancies"] == 0
+
