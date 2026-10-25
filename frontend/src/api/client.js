@@ -75,6 +75,16 @@ export const api = {
     request(`/demo/scenarios/${encodeURIComponent(name)}/run`, { method: 'POST' }),
   resetDemo: () =>
     request('/demo/reset', { method: 'POST' }),
+  getChainStatus: () =>
+    request('/chain/status'),
+  getChainState: () =>
+    request('/chain/state'),
+  setChainMode: (mode) =>
+    request('/chain/mode', { method: 'POST', body: JSON.stringify({ mode }) }),
+  releaseChain: (recipient = null) => {
+    const query = recipient ? `?recipient=${encodeURIComponent(recipient)}` : '';
+    return request(`/chain/release${query}`, { method: 'POST' });
+  },
 };
 
 export { ApiError };

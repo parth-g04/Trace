@@ -3,43 +3,88 @@ import { formatWeiToEth, formatCentsToUsd } from '../utils/formatters';
 
 /**
  * TrancheControl Component
- * Displays tranche disbursement rules, spending thresholds, and executes release attempts.
- * Truthfulness rule: Frontend reflects actual backend release rules and responses; does not authorize releases locally.
+ *
+ * Implements purposeful disbursement control with strict spend-gating.
+ * Supports:
+ * - Deterministic Simulation releases via backend SQLite engine
+ * - Real on-chain EVM transactions via connected wallet or backend Web3 adapter
+ * - Transparent display of release deficit, spending thresholds, and real error reasons
  */
-export function TrancheControl({ project, onReleaseAttempt }) {
+export function TrancheControl({
+  project,
+  chainState,
+  mode,
+  _chainStatus,
+  wallet,
+  contractAddress,
+  contractAbi,
+  onReleaseAttempt,
+  onChainReleaseAttempt,
+}) {
   const [submitting, setSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState(null);
 
-  if (!project) return null;
+  const isChainMode = mode === 'local_chain';
+  const effectiveProject = isChainMode && chainState ? chainState : project;
 
-  const currentTranche = project.current_tranche;
-  const totalTranches = project.total_tranches;
+  if (!effectiveProject) return null;
+
+  const currentTranche = Number(effectiveProject.current_tranche ?? 0);
+  const totalTranches = Number(effectiveProject.total_tranches ?? 5);
   const nextTranche = currentTranche < totalTranches ? currentTranche + 1 : null;
-  const isFrozen = project.is_frozen;
+  const isFrozen = Boolean(effectiveProject.is_frozen);
+  const freezeReason = effectiveProject.freeze_reason || 'Security violation detected';
 
-  // Release rules:
-  // Tranche 1 requires 0 prior spend.
-  // Tranche N (N > 1) requires verified_spend >= released_wei.
-  const releasedWei = BigInt(project.released_wei || '0');
-  const verifiedSpendWei = BigInt(project.verified_spend_wei || '0');
+  const releasedWei = BigInt(effectiveProject.released_wei || '0');
+  const verifiedSpendWei = BigInt(effectiveProject.verified_spend_wei || '0');
+
+  // Gating rule: Tranche 1 requires no prior spend. Subsequent tranches require spend >= released.
   const hasMetThreshold = currentTranche === 0 || verifiedSpendWei >= releasedWei;
-
-  const releasedEth = formatWeiToEth(project.released_wei);
-  const verifiedSpendEth = formatWeiToEth(project.verified_spend_wei);
-
   const deficitWei = releasedWei > verifiedSpendWei ? releasedWei - verifiedSpendWei : 0n;
   const deficitEth = formatWeiToEth(deficitWei);
+  const deficitUsd = formatCentsToUsd(Number(deficitWei / 5000000000000n));
+
+  const releasedEth = formatWeiToEth(releasedWei);
+  const verifiedSpendEth = formatWeiToEth(verifiedSpendWei);
 
   const handleRelease = async () => {
+    if (submitting) return;
     setSubmitting(true);
     setLastResult(null);
+
     try {
-      const res = await onReleaseAttempt(project.id);
-      setLastResult({ success: res.status === 'RELEASED', data: res });
+      let res;
+      if (isChainMode) {
+        // If user wallet is connected and on correct network, offer direct wallet execution
+        if (wallet?.isConnected && !wallet?.isWrongNetwork && contractAddress && contractAbi) {
+          res = await wallet.releaseTrancheOnChain(contractAddress, contractAbi);
+          res = {
+            status: 'RELEASED',
+            tx_hash: res.txHash,
+            explanation: `Tranche ${nextTranche} confirmed on local Hardhat blockchain.`,
+            mode: 'local_chain',
+          };
+        } else {
+          // Otherwise execute via backend Web3 adapter
+          res = await onChainReleaseAttempt();
+        }
+      } else {
+        // Simulation mode release
+        res = await onReleaseAttempt(project.id);
+      }
+
+      setLastResult({
+        success: res.status === 'RELEASED',
+        data: res,
+      });
     } catch (err) {
+      console.error('[TrancheControl] Release failed:', err);
       setLastResult({
         success: false,
-        data: err.data || { reason: 'API_ERROR', explanation: err.message },
+        data: err.data || {
+          reason: err.name || 'RELEASE_FAILED',
+          explanation: err.message || 'Transaction reverted or blocked by spend gate.',
+        },
       });
     } finally {
       setSubmitting(false);
@@ -47,103 +92,162 @@ export function TrancheControl({ project, onReleaseAttempt }) {
   };
 
   return (
-    <div className="panel tranche-control-panel">
+    <section className="panel tranche-control-panel" aria-label="Escrow Disbursement Controller">
       <div className="panel-header">
         <div>
-          <span className="micro-label">ESCROW DISBURSEMENT CONTROLLER</span>
-          <h2 className="panel-title">Tranche Progress & Release Eligibility</h2>
+          <span className="micro-label">PURPOSE-BOUND DISBURSEMENT GATE</span>
+          <h2 className="panel-title">Tranche Progress & Spend-Gated Release</h2>
         </div>
         <div className="panel-actions">
-          <span className={`badge ${hasMetThreshold && !isFrozen ? 'badge-verified' : 'badge-warning'}`}>
+          <span
+            className={`status-chip ${
+              isFrozen
+                ? 'chip-danger'
+                : currentTranche === 0
+                ? 'chip-success'
+                : hasMetThreshold
+                ? 'chip-success'
+                : 'chip-warning'
+            }`}
+          >
             {isFrozen
-              ? 'BLOCKED: PROJECT FROZEN'
+              ? 'LOCKED (PROJECT FROZEN)'
               : currentTranche === 0
               ? 'TRANCHE 1 READY'
+              : currentTranche >= totalTranches
+              ? 'ALL TRANCHES RELEASED'
               : hasMetThreshold
               ? `TRANCHE ${nextTranche} UNLOCKED`
-              : `TRANCHE ${nextTranche} LOCKED`}
+              : `TRANCHE ${nextTranche} LOCKED (DEFICIT)`}
           </span>
         </div>
       </div>
 
       <div className="tranche-body">
-        <div className="tranche-stats-grid">
-          <div className="tranche-stat">
-            <span className="micro-label">CURRENT TRANCHE</span>
-            <span className="stat-val font-mono">
-              {currentTranche} <span className="stat-max">/ {totalTranches}</span>
+        {/* Frozen Alert Banner */}
+        {isFrozen && (
+          <div className="alert-banner alert-banner-danger" role="alert">
+            <div className="alert-header">
+              <strong>ESCROW VAULT FROZEN:</strong> {freezeReason}
+            </div>
+            <p className="alert-text">
+              All tranche disbursements are cryptographically halted on-chain. Reset the demo or resolve security findings to restore operations.
+            </p>
+          </div>
+        )}
+
+        {/* 4 Stat Column Row */}
+        <div className="tranche-stats-strip">
+          <div className="tranche-stat-box">
+            <span className="stat-label">CURRENT DISBURSED</span>
+            <span className="stat-value font-mono">
+              Tranche {currentTranche} <span className="stat-denom">/ {totalTranches}</span>
             </span>
           </div>
 
-          <div className="tranche-stat">
-            <span className="micro-label">TOTAL RELEASED</span>
-            <span className="stat-val font-mono">{releasedEth} ETH</span>
+          <div className="tranche-stat-box">
+            <span className="stat-label">CUMULATIVE RELEASED</span>
+            <span className="stat-value font-mono num-tabular">{releasedEth} ETH</span>
           </div>
 
-          <div className="tranche-stat">
-            <span className="micro-label">VERIFIED EXPENDITURE</span>
-            <span className="stat-val font-mono">{verifiedSpendEth} ETH</span>
+          <div className="tranche-stat-box">
+            <span className="stat-label">VERIFIED SPENDING</span>
+            <span className="stat-value font-mono num-tabular">{verifiedSpendEth} ETH</span>
           </div>
 
-          <div className="tranche-stat">
-            <span className="micro-label">NEXT RELEASE REQUIREMENT</span>
-            <span className="stat-val font-mono">
+          <div className="tranche-stat-box">
+            <span className="stat-label">DISBURSEMENT CONDITION</span>
+            <span className="stat-value font-mono">
               {currentTranche === 0
-                ? '0.00 ETH (Initial Release)'
-                : `${releasedEth} ETH verified`}
+                ? '0.00 ETH (Genesis Release)'
+                : `${releasedEth} ETH Verified Spend Required`}
             </span>
           </div>
         </div>
 
-        {/* Threshold explanation */}
-        <div className="tranche-threshold-banner">
-          {currentTranche === 0 ? (
-            <p className="threshold-text">
-              Project is at Tranche 0. Initial tranche of 10.00 ETH can be disbursed without prior expenditure claims.
-            </p>
-          ) : hasMetThreshold ? (
-            <p className="threshold-text text-verified">
-              Verified spend ({verifiedSpendEth} ETH) covers all prior releases ({releasedEth} ETH). Tranche {nextTranche} is eligible for disbursement.
-            </p>
-          ) : (
-            <p className="threshold-text text-warning">
-              Tranche {nextTranche} requires verified spending covering all prior releases ({releasedEth} ETH). Current deficit: <strong className="font-mono">{deficitEth} ETH</strong> ({formatCentsToUsd(Number((deficitWei * 200000n) / 1000000000000000000n))}).
-            </p>
-          )}
-        </div>
+        {/* Spend Deficit / Threshold Guidance */}
+        {!isFrozen && currentTranche > 0 && currentTranche < totalTranches && (
+          <div
+            className={`threshold-guidance-box ${
+              hasMetThreshold ? 'guidance-unlocked' : 'guidance-locked'
+            }`}
+          >
+            {hasMetThreshold ? (
+              <div>
+                <strong>Spending Gate Satisfied:</strong> Verified expenditure ({verifiedSpendEth} ETH) meets or exceeds previously disbursed funds ({releasedEth} ETH). Tranche {nextTranche} is eligible for release.
+              </div>
+            ) : (
+              <div>
+                <strong>Spending Requirement Unmet:</strong> Tranche {nextTranche} is strictly gated until NGO submits additional verified claims. Current spend deficit:{' '}
+                <strong className="font-mono">{deficitEth} ETH</strong> (approx <span className="font-mono">{deficitUsd}</span>).
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Release Button */}
-        <div className="tranche-actions">
+        {/* Release Action Controls */}
+        <div className="tranche-actions-bar">
+          <div className="action-mode-info">
+            <span className="font-mono text-muted">
+              Execution Target:{' '}
+              <strong>
+                {isChainMode
+                  ? wallet?.isConnected
+                    ? `Connected Wallet (${wallet.truncatedAddress}) → TraceEscrow.sol`
+                    : 'Backend Web3 Relay → TraceEscrow.sol'
+                  : 'Python / SQLite Simulated Escrow Vault'}
+              </strong>
+            </span>
+          </div>
+
           <button
             id="release-tranche-btn"
-            className="btn-primary release-trigger-btn"
+            type="button"
+            className="btn-primary"
             onClick={handleRelease}
-            disabled={submitting || currentTranche >= totalTranches}
+            disabled={submitting || isFrozen || currentTranche >= totalTranches}
+            title={
+              isFrozen
+                ? 'Disbursement blocked: project is frozen'
+                : currentTranche >= totalTranches
+                ? 'All tranches already disbursed'
+                : `Attempt disbursement of Tranche ${nextTranche || 1}`
+            }
           >
-            {submitting ? 'EVALUATING RELEASE VIA BACKEND...' : `ATTEMPT TRANCHE ${nextTranche || 'FULL'} RELEASE`}
+            {submitting
+              ? isChainMode
+                ? 'CONFIRMING ON CHAIN...'
+                : 'RELEASING TRANCHE...'
+              : currentTranche >= totalTranches
+              ? 'ALL TRANCHES RELEASED'
+              : `RELEASE TRANCHE ${nextTranche || 1} (${isChainMode ? 'BLOCKCHAIN' : 'SIMULATION'})`}
           </button>
         </div>
 
-        {/* Outcome Feedback */}
+        {/* Last Release Result Feedback Box */}
         {lastResult && (
-          <div className={`result-box ${lastResult.success ? 'result-success' : 'result-failure'}`}>
-            <div className="result-header">
-              <span className="micro-label">BACKEND EVALUATION OUTCOME</span>
-              <span className={`badge ${lastResult.success ? 'badge-verified' : 'badge-rejected'}`}>
-                {lastResult.data.status}
+          <div
+            className={`result-feedback-box ${
+              lastResult.success ? 'feedback-success' : 'feedback-failure'
+            }`}
+            role="status"
+          >
+            <div className="feedback-header">
+              <span className={`status-chip ${lastResult.success ? 'chip-success' : 'chip-danger'}`}>
+                {lastResult.success ? 'TRANCHE RELEASED' : 'RELEASE BLOCKED'}
               </span>
+              {lastResult.data?.tx_hash && (
+                <span className="tx-hash-badge font-mono" title={lastResult.data.tx_hash}>
+                  TX: {lastResult.data.tx_hash.slice(0, 10)}...{lastResult.data.tx_hash.slice(-8)}
+                </span>
+              )}
             </div>
-            {lastResult.data.reason && (
-              <div className="result-reason font-mono">
-                REASON: {lastResult.data.reason}
-              </div>
-            )}
-            <div className="result-explanation">
-              {lastResult.data.explanation || (lastResult.success ? 'Tranche released successfully.' : 'Disbursement rejected by escrow rules.')}
-            </div>
+            <p className="feedback-explanation">
+              {lastResult.data?.explanation || lastResult.data?.reason || 'Evaluation complete.'}
+            </p>
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }

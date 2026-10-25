@@ -10,24 +10,24 @@
   --bg-surface: #FFFFFF;
   --bg-subtle: #F1F5F9;
   --text-primary: #0F172A;
-  --text-muted: #64748B;
+  --text-muted: #475569;
   --border-color: #E2E8F0;
   --border-dark: #CBD5E1;
 
   /* Semantic State Colors */
-  --color-verified: #059669;
+  --color-verified: #047857;
   --color-verified-bg: #ECFDF5;
   --color-verified-border: #A7F3D0;
 
-  --color-rejected: #DC2626;
+  --color-rejected: #B91C1C;
   --color-rejected-bg: #FEF2F2;
   --color-rejected-border: #FECACA;
 
-  --color-warning: #B45309;
+  --color-warning: #92400E;
   --color-warning-bg: #FFFBEB;
   --color-warning-border: #FDE68A;
 
-  --color-info: #2563EB;
+  --color-info: #1D4ED8;
   --color-info-bg: #EFF6FF;
   --color-info-border: #BFDBFE;
 
@@ -57,6 +57,7 @@ html, body {
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
+  text-wrap: pretty;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

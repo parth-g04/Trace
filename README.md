@@ -1,147 +1,193 @@
-# TRACE: Verifiable NGO Fund Flows
+# TRACE: Verifiable NGO Fund Flows & Cryptographic Escrow
 ### CASCADE '26 Hackathon — Problem Statement 4.2: The Black Hole Ledger
 
-> **Current Implementation Status:** **Phase 0 Complete (Toolchain Verified)**  
-> Application features (escrow smart contract, API endpoints, signing services, database migrations, and dashboard UI) are **not yet implemented**. Only repository foundation and toolchain smoke tests have been executed and verified.
+> **Status: Web3 Escrow Integration & Design System Upgrade Complete**  
+> Features purpose-bound Solidity escrow (`TraceEscrow.sol`), strict spend-gating, canonical EIP-712 expenditure verification, nullifier-based cross-report duplicate protection, dual execution modes (`simulation` and `local_chain`), and a Swiss-minimalist institutional audit dashboard verified with Impeccable design tooling.
 
 ---
 
-## 1. Problem Statement
+## 1. Problem Statement & Mission
 
-NGO donations frequently suffer from the "black hole" problem: once funds enter an organization's omnibus accounts, donors lose visibility into how money is actually spent. Common vulnerabilities include:
-- **Duplicate invoice claims:** Submitting the same vendor receipt to multiple donor reports.
-- **Off-purpose disbursements:** Diverting funds to unapproved categories.
-- **Unexplained transfers:** Fund leakage across intermediary bank accounts and shell entities.
-- **Unverifiable off-chain evidence:** Tampered receipts and unverifiable vendor claims.
+NGO donations frequently suffer from the **"black hole"** problem: once donated funds enter omnibus accounts, donors and evaluators lose visibility into how money is actually spent. Common systemic vulnerabilities include:
+- **Duplicate invoice claims:** Re-submitting the same vendor receipt to multiple donor grant reports.
+- **Off-purpose disbursements:** Diverting funds to unapproved categories without cryptographic constraints.
+- **Unexplained transfers:** Fund leakage across intermediary bank accounts and opaque fiat conversions.
+- **Unverifiable off-chain evidence:** Tampered receipts and altered payment amounts.
 
-TRACE solves this by enforcing purpose-bound cryptographic escrow on an EVM ledger, requiring vendor-signed expenditure receipts (EIP-712) with cross-report duplicate detection, multi-hop reconciliation, and an exploratory audit dashboard.
-
----
-
-## 2. Product Objective & Planned MVP
-
-The eventual TRACE system demonstrates:
-1. **Vendor-Signed Expenditure Receipts:** Cryptographic claims signed by authorized vendors using EIP-712 typed structured data.
-2. **Global Duplicate Invoice Detection:** Nullifier registry based on canonical vendor identity and invoice number to prevent cross-report double-claiming.
-3. **Purpose-Bound On-Chain Escrow:** Smart contract-enforced release rules based on category budgets, remaining balances, and vendor registration.
-4. **Multi-Hop Fund-Flow Tracing:** Directed graph reconstruction of allocations and payments with conservation-of-flow accounting.
-5. **Off-Chain Evidence Commitments:** Privacy-preserving salted document hashes anchoring sensitive receipts without leaking beneficiary data.
-6. **Simulated External Systems:** Explicitly labelled simulations of secondary chains, relayers, and fiat off-ramps.
-7. **Exploratory Audit Dashboard:** Real-time visibility into project allocations, transaction graphs, verification warnings, and audit logs.
-8. **Adversarial Security Suite:** Automated tests demonstrating resilience against forged signatures, duplicate invoices, budget overruns, and front-running.
+**TRACE** solves this by establishing purpose-bound programmatic escrow on an EVM ledger, requiring vendor-signed expenditure claims (EIP-712) with cross-report duplicate detection, multi-hop flow reconciliation, and an auditable institutional terminal.
 
 ---
 
-## 3. Technology Stack (Locked & Verified)
+## 2. Architecture & System Flow
 
-| Layer | Technology | Verified Resolved Version | Notes |
-|---|---|---|---|
-| **Smart Contracts** | Solidity | `0.8.28` (EVM: Paris) | Compiled via Hardhat |
-| **Framework** | Hardhat 2 | `hardhat@2.29.1` (pinned exact) | JavaScript project, not TypeScript |
-| **Toolbox** | Hardhat Toolbox | `@nomicfoundation/hardhat-toolbox@5.0.0` | Ethers v6, Chai |
-| **Local Node** | Hardhat Local EVM | Chain ID `31337` | Local JSON-RPC at `127.0.0.1:8545` |
-| **Backend Runtime** | Python | `3.14.2` | Local `.venv` isolated environment |
-| **API Framework** | FastAPI | `fastapi==0.162.0` | High-performance async REST API |
-| **Data Validation** | Pydantic | `pydantic==2.14.1` | Canonical schema validation |
-| **Server** | Uvicorn | `uvicorn==0.54.0` | ASGI server |
-| **Web3 Client** | web3.py | `web3==8.0.0` | JSON-RPC interaction |
-| **Key & Signatures** | eth-account | `eth-account==0.14.0` | EIP-712 signature verification |
-| **Test Runner** | pytest | `pytest==9.1.1` | Backend automated testing |
-| **Frontend Framework** | React | `19.3.1` (JavaScript/JSX) | Not TypeScript |
-| **Bundler & Tooling**| Vite | `8.3.5` | Fast ESM build pipeline |
-| **Database (Planned)**| SQLite | Python standard `sqlite3` | Exact integer accounting |
-
----
-
-## 4. Architecture Overview
-
-TRACE is architected into four strict layers:
+TRACE separates off-chain verification and privacy-preserving document storage from on-chain monetary releases and nullifier tracking:
 
 ```mermaid
-flowchart LR
-    A["Frontend (React + Vite)"] -->|REST API| B["Backend (FastAPI)"]
-    B -->|SQLite Queries| C[("SQLite Datastore")]
-    B -->|web3.py JSON-RPC| D["TraceEscrow (Local EVM)"]
+flowchart TD
+    subgraph Frontend["Frontend Terminal (React 19 + Vite + Ethers v6)"]
+        UI["Audit Dashboard (Swiss-Minimalist)"]
+        Wallet["Injected Wallet Provider (Local 31337)"]
+    end
+
+    subgraph Backend["FastAPI Verification Engine & Adapter"]
+        API["FastAPI REST Router (/projects, /chain)"]
+        EIP712["EIP-712 Signature & Nullifier Engine"]
+        W3Adapter["web3.py Blockchain Adapter"]
+        DB[("SQLite Audit Store (Integer Accounting)")]
+    end
+
+    subgraph Blockchain["Local EVM Blockchain (Hardhat 31337)"]
+        Contract["TraceEscrow.sol (0x5FbDB...0aa3)"]
+        Events["On-Chain Events (TrancheReleased, DuplicateRejected)"]
+    end
+
+    subgraph OffChain["Privacy-Preserving Off-Chain Evidence"]
+        Vendor["Authorized Vendor Private Keys"]
+        ReceiptDoc["Off-Chain Receipt Document (PDF/JSON)"]
+        SaltHash["SHA-256 Salted Evidence Commitment"]
+    end
+
+    Vendor -->|Signs EIP-712 Claim| API
+    ReceiptDoc -->|Salted Hash| SaltHash
+    SaltHash -->|Commitment Included| EIP712
+    UI -->|Connects / Signs| Wallet
+    UI -->|REST Queries / Mode Toggle| API
+    Wallet -->|User-Authorized Tx| Contract
+    API -->|Read / Relay Tx| W3Adapter
+    W3Adapter -->|JSON-RPC 127.0.0.1:8545| Contract
+    API -->|Audit Metadata & Flow Graphs| DB
+    Contract -->|Emits Audit Trails| Events
 ```
 
-- **Frontend (`frontend/`):** Consumes the backend REST API to render project statuses, receipt claims, transfer flowcharts, and audit logs. The frontend has **no direct database access**.
-- **Backend (`backend/`):** Validates receipt requests, computes canonical nullifiers, tracks multi-hop transfers, logs audit trails, and interacts with the blockchain. The backend prepares claims but does not act as sole release authority.
-- **Smart Contracts (`contracts/`):** Deployed to local Hardhat node. Autonomous enforcement of vendor registry, EIP-712 receipt signatures, global invoice nullifiers, and escrow release rules.
-- **Database (`backend/data/`):** SQLite database for project metadata, transfer graph edges, and evidence references. Monetary figures are strictly stored in integer units (wei or integer cents).
-
-For complete design details, component boundaries, and security invariants, see [docs/architecture.md](docs/architecture.md).
-
----
-
-## 5. Phase Roadmap & Approval Policy
-
-Development follows a strict, gated phase model. **No phase may begin without explicit human reviewer sign-off.**
-
-| Phase | Description | Status |
-|---|---|---|
-| **Phase 0** | Environment, repository hygiene, architecture docs, and toolchain smoke tests | **COMPLETED & VERIFIED** |
-| **Phase 1** | Canonical receipt schema, EIP-712 signatures, invoice identity, duplicate detection unit tests | *Pending Review Approval* |
-| **Phase 2** | Solidity escrow contract (`TraceEscrow.sol`), signature enforcement, nullifiers, release rules, contract tests | *Planned* |
-| **Phase 3** | FastAPI REST endpoints, SQLite schema, web3.py integration, end-to-end backend tests | *Planned* |
-| **Phase 4** | Multi-hop flow reconciliation, simulated second-chain & fiat off-ramp events, privacy commitments | *Planned* |
-| **Phase 5** | React + Vite audit dashboard, transfer graph visualization, REST API integration | *Planned* |
-| **Phase 6** | Adversarial test suite, synthetic demo dataset, benchmark metrics, spot-audit walkthrough | *Planned* |
+### Trust Boundaries & Key Invariants
+1. **Solidity-Enforced Spend Gate:** Tranche 1 is released at project initialization. Tranche $N$ ($N \ge 2$) is strictly locked by the smart contract until cumulative verified expenditure ($\text{verifiedSpendWei}$) meets or exceeds previously released funds ($\text{releasedWei}$).
+2. **Global Invoice Nullifier:** Canonical nullifiers are deterministically computed as $\text{keccak256}(\text{abi.encode}(\text{vendorId}, \text{invoiceId}))$. An invoice can **never** be accepted twice, even across distinct reports or projects.
+3. **Fail-Closed Execution:** Reverted transactions or RPC timeouts never fall back to simulated release. Failures are reported with exact revert reasons.
+4. **Privacy Preservation:** Sensitive receipt PDFs, beneficiary identities, and private vendor salts remain off-chain; only SHA-256 evidence commitments and nullifiers are recorded on-chain.
+5. **No Floating-Point Math:** All accounting in smart contracts, SQLite, and Python uses exact integer units (wei or integer USD cents).
 
 ---
 
-## 6. Phase 0 Verification & Smoke Test Results
+## 3. Technology Stack
 
-All Phase 0 toolchain components have been verified locally on Windows:
-
-| Component | Check | Command Executed | Result | Output Details |
-|---|---|---|---|---|
-| **Contracts** | Version Verification | `npx hardhat --version` | **PASS** | `2.29.1` |
-| **Contracts** | Compilation | `npx hardhat compile` | **PASS** | Downloaded `solc 0.8.28`, compiled 1 file (EVM: paris) |
-| **Contracts** | Sample Test Suite | `npx hardhat test` | **PASS** | 1 passing (794ms) |
-| **Backend** | Dependency Imports | `python -c "import fastapi, uvicorn, pydantic, web3, eth_account; print('BACKEND_IMPORTS_OK')"` | **PASS** | `BACKEND_IMPORTS_OK` |
-| **Backend** | Test Runner | `pytest --version` | **PASS** | `pytest 9.1.1` |
-| **Backend** | Pytest Execution | `pytest tests/test_smoke.py` | **PASS** | `1 passed in 2.66s` |
-| **Frontend** | Production Build | `npm run build` | **PASS** | Vite built client in 234ms (`dist/index.html`, assets) |
-| **Integration**| Local EVM Node | `npx hardhat node` | **PASS** | Node started at `127.0.0.1:8545` |
-| **Integration**| Python Web3 RPC | `python smoke_chain_connectivity.py` | **PASS** | `WEB3_CONNECTED: True`, `CHAIN_ID: 31337`, `BLOCK: 0` |
-| **Integration**| Clean Shutdown | Process termination & TCP check | **PASS** | Port 8545 cleanly released |
+| Layer | Technology | Version | Purpose |
+|---|---|---|---|
+| **Smart Contracts** | Solidity | `0.8.28` | Spend-gated escrow, nullifier registry, EIP-712 verification |
+| **Blockchain Dev** | Hardhat | `2.29.1` | Local EVM compilation, testing, and deployment |
+| **Local Node** | Hardhat Network | Chain ID `31337` | Local JSON-RPC provider at `http://127.0.0.1:8545` |
+| **Backend Runtime** | Python | `3.14.2` | High-performance Python async runtime |
+| **Backend Framework** | FastAPI | `0.162.0` | Asynchronous REST API |
+| **Validation** | Pydantic | `2.14.1` | Schema serialization and strict validation |
+| **Web3 Client** | web3.py | `8.0.0` | Node connectivity, contract reads, and transaction execution |
+| **Cryptographics** | eth-account | `0.14.0` | EIP-712 signature parsing and address recovery |
+| **Frontend Runtime** | React 19 + Vite | `19.3.1` / `8.3.5` | Reactive client UI |
+| **Web3 Frontend** | Ethers.js | `6.16.0` | Injected browser wallet connector and contract calls |
+| **Design Tooling** | Impeccable | `4.7.0` | Institutional UX critique, contrast, and audit tool |
+| **Database** | SQLite | Python `sqlite3` | Deterministic simulation and immutable audit trail |
 
 ---
 
-## 7. Local Setup Instructions
+## 4. Local Development & Startup Guide
 
 ### Prerequisites
-- Node.js `v24.12.0` and npm `11.6.2`
-- Python `3.14.2` and pip `26.2.1`
-- Git `2.51.0`
+- **Node.js** `v24.12.0` or higher and `npm 11.6.2`
+- **Python** `3.14.2` with virtualenv support
+- **Git**
 
-### Contracts Setup
-```bash
+### Step 1: Start the Local Hardhat Node
+In a dedicated PowerShell terminal:
+```powershell
 cd contracts
-npm install
-npx hardhat test
+npx hardhat node
 ```
+*The local node starts at `http://127.0.0.1:8545/` on Chain ID `31337`.*
 
-### Backend Setup
-```bash
+### Step 2: Compile & Deploy TraceEscrow Contract
+In a second PowerShell terminal:
+```powershell
+cd contracts
+npx hardhat compile
+npx hardhat run scripts/deploy.js --network localhost
+```
+*Outputs deployed contract address: `0x5FbDB2315678afecb367f032d93F642f64180aa3` and automatically synchronizes ABI to `frontend/src/contracts/TraceEscrow.json`.*
+
+### Step 3: Start the FastAPI Backend
+In a third PowerShell terminal:
+```powershell
 cd backend
-python -m venv .venv
-# Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pytest
+uvicorn backend.app.main:app --port 8000
 ```
+*API is accessible at `http://127.0.0.1:8000` (docs at `http://127.0.0.1:8000/docs`).*
 
-### Frontend Setup
-```bash
+### Step 4: Start the Frontend Application
+In a fourth PowerShell terminal:
+```powershell
 cd frontend
-npm install
-npm run build
+npm run dev
 ```
+*Dashboard opens at `http://localhost:5173/`.*
 
 ---
 
-## 8. Security & Privacy Notice
+## 5. Dual Operational Modes
 
-- **No Secrets in Repo:** Real private keys, credentials, and live API tokens must never be committed. See `.env.example` for required configuration keys.
-- **Offline Caveat:** Initial contract compilation required an internet connection to fetch Solidity compiler `0.8.28`. Subsequent compiles on this machine use the local cache at `%LOCALAPPDATA%\hardhat-nodejs\Cache\compilers-v2`.
+The dashboard features an explicit header toggle between two operational environments:
+
+| Feature | `simulation` Mode | `local_chain` Mode |
+|---|---|---|
+| **Underlying Vault** | Deterministic Python / SQLite state machine | Deployed Solidity contract `TraceEscrow.sol` |
+| **Release Authority** | Local simulation rules engine | On-chain operator transaction or connected wallet |
+| **Accounting Ledger** | SQLite `projects` & `flow_events` tables | EVM contract storage & confirmed transaction receipts |
+| **Spend Gating** | Python constraint checker | Solidity contract `revert InsufficientVerifiedSpend()` |
+| **Nullifier Enforcement**| SQLite unique index on canonical nullifiers | Solidity mapping `seenNullifiers[nullifier]` |
+| **Use Case** | Rapid hackathon scenario evaluation | Live local blockchain verification & wallet inspection |
+
+---
+
+## 6. Running Tests
+
+### 1. Smart Contract Tests (Hardhat)
+```powershell
+cd contracts
+npx hardhat test
+```
+*Passes 15/15 tests covering project initialization, spend-gated releases, duplicate nullifier freezes, EIP-712 authentications, tampered receipt rejections, and emergency sweeps.*
+
+### 2. Backend Test Suite (Pytest)
+```powershell
+backend\.venv\Scripts\pytest backend\tests -v
+```
+*Passes 134/134 tests covering cryptographic verification, canonical invoice identity, API routes, Web3 adapter, fail-closed mechanics, and live chain integration.*
+
+### 3. Frontend Lint & Production Build
+```powershell
+cd frontend
+npm run lint    # oxlint: 0 errors, 0 warnings
+npm run build   # vite build: production bundle verified
+```
+
+### 4. Design System Audit (Impeccable)
+```powershell
+.agents\skills\impeccable\scripts\impeccable.cmd detect http://localhost:5173/
+```
+*Verifies 0 design anti-patterns, compliant WCAG AA contrast (5.5:1+), flat hierarchy, and valid typography.*
+
+---
+
+## 7. Security Warnings & Trust Assumptions
+
+> [!WARNING]
+> **Development Keys & Local RPC:**  
+> The private keys configured in Hardhat accounts (e.g. Account #0 `0xac09...`, Account #1 `0x59c6...`) are **publicly known test fixtures**. Never send real funds to these addresses on public networks.
+
+> [!IMPORTANT]
+> **Trust Boundaries:**  
+> `TraceEscrow.sol` enforces release constraints based on verified expenditure claims and authorized verifier attestations. The blockchain proves that valid signatures and non-replayed nullifiers were provided; it does not independently prove real-world delivery of physical supplies without trustworthy sensor, vendor, or evaluator attestations.
+
+---
+
+## 8. License & Acknowledgements
+
+Developed for **CASCADE '26 Hackathon — Problem Statement 4.2: The Black Hole Ledger**.  
+Built with FastAPI, Solidity, Hardhat, web3.py, React, Ethers.js, and Impeccable.

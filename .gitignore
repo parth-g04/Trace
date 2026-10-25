@@ -60,3 +60,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Impeccable local cache and configs
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.agents/skills/impeccable/scripts/bin/
+*.exe

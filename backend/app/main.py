@@ -20,11 +20,14 @@ from backend.app.db import Database, get_db_path
 from backend.app.demo.scenarios import list_demo_scenarios, run_scenario
 from backend.app.models.api import (
     AuditEventResponse,
+    ChainStateResponse,
+    ChainStatusResponse,
     ClaimRecordResponse,
     ClaimResponse,
     ClaimSubmitRequest,
     HealthResponse,
     MetricsResponse,
+    ModeUpdateRequest,
     ProjectResponse,
     ReleaseResponse,
     ScenarioInfo,
@@ -33,9 +36,12 @@ from backend.app.models.api import (
 )
 from backend.app.models.receipt import EIP712Domain, Receipt
 from backend.app.services.trace_graph import TraceGraphReconciler, build_trace_graph
+from backend.app.services.web3_service import Web3Service
 
 # Global database instance
 _global_db: Optional[Database] = None
+# Global Web3 service instance
+_global_web3: Optional[Web3Service] = None
 
 
 def get_db() -> Database:
@@ -44,6 +50,14 @@ def get_db() -> Database:
     if _global_db is None:
         _global_db = Database()
     return _global_db
+
+
+def get_web3_service() -> Web3Service:
+    """Dependency provider for Web3 contract service."""
+    global _global_web3
+    if _global_web3 is None:
+        _global_web3 = Web3Service()
+    return _global_web3
 
 
 @asynccontextmanager
@@ -84,12 +98,15 @@ app.add_middleware(
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
-def health(db: Database = Depends(get_db)):
+def health(
+    db: Database = Depends(get_db),
+    web3_svc: Web3Service = Depends(get_web3_service),
+):
     """Health check endpoint indicating simulation mode and datastore status."""
     return HealthResponse(
         status="healthy",
         version="0.1.0",
-        simulation_mode=True,
+        simulation_mode=(web3_svc.mode != "local_chain"),
         database="connected",
         timestamp=int(time.time()),
     )
@@ -276,11 +293,36 @@ def list_claims(
 
 
 @app.post("/projects/{id}/release", response_model=ReleaseResponse, tags=["Escrow"])
-def release_tranche(id: str, db: Database = Depends(get_db)):
+def release_tranche(
+    id: str,
+    db: Database = Depends(get_db),
+    web3_svc: Web3Service = Depends(get_web3_service),
+):
     """
     Attempts to release the next funding tranche for a project.
-    Enforces that verified spending must cover all prior releases.
+    If active mode is 'local_chain', executes directly on-chain and verifies the receipt.
+    If active mode is 'simulation', enforces the spend-gating rules in SQLite.
+    Never silently falls back to simulation on on-chain failure.
     """
+    if web3_svc.mode == "local_chain":
+        res = web3_svc.release_next_tranche_on_chain()
+        resp_model = ReleaseResponse(
+            status=res["status"],
+            project_id=res.get("project_id", id),
+            tranche_number=res.get("tranche_number"),
+            released_wei=res.get("released_wei"),
+            total_released_wei=res.get("total_released_wei"),
+            remaining_budget_wei=res.get("remaining_budget_wei"),
+            disbursement_allowed=res.get("disbursement_allowed", False),
+            reason=res.get("reason"),
+            explanation=res.get("explanation"),
+            tx_hash=res.get("tx_hash"),
+            mode="local_chain",
+        )
+        if res["status"] == "RELEASED":
+            return resp_model
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=resp_model.model_dump())
+
     res = db.release_next_tranche(id)
     resp_model = ReleaseResponse(
         status=res["status"],
@@ -292,11 +334,71 @@ def release_tranche(id: str, db: Database = Depends(get_db)):
         disbursement_allowed=res.get("disbursement_allowed", False),
         reason=res.get("reason"),
         explanation=res.get("explanation"),
+        mode="simulation",
     )
 
     if res["status"] == "RELEASED":
         return resp_model
 
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=resp_model.model_dump())
+
+
+@app.get("/chain/status", response_model=ChainStatusResponse, tags=["Blockchain"])
+def get_chain_status(web3_svc: Web3Service = Depends(get_web3_service)):
+    """Returns local blockchain connectivity, chain ID, contract address, deployment status, and active mode."""
+    return ChainStatusResponse(**web3_svc.get_status())
+
+
+@app.get("/chain/state", response_model=ChainStateResponse, tags=["Blockchain"])
+def get_chain_state(web3_svc: Web3Service = Depends(get_web3_service)):
+    """Reads on-chain project escrow state directly from the deployed TraceEscrow contract."""
+    try:
+        data = web3_svc.get_contract_state()
+        return ChainStateResponse(**data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to query on-chain state: {str(e)}",
+        )
+
+
+@app.post("/chain/mode", tags=["Blockchain"])
+def set_chain_mode(
+    req: ModeUpdateRequest,
+    web3_svc: Web3Service = Depends(get_web3_service),
+):
+    """Explicitly toggles between 'simulation' and 'local_chain' execution modes."""
+    if req.mode not in ("simulation", "local_chain"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mode must be either 'simulation' or 'local_chain'.",
+        )
+    web3_svc.mode = req.mode
+    return {"status": "MODE_UPDATED", "mode": req.mode}
+
+
+@app.post("/chain/release", response_model=ReleaseResponse, tags=["Blockchain"])
+def chain_release(
+    recipient: Optional[str] = Query(None, description="Optional recipient address for release"),
+    web3_svc: Web3Service = Depends(get_web3_service),
+):
+    """Explicitly submits an on-chain tranche release transaction to the local Hardhat chain."""
+    res = web3_svc.release_next_tranche_on_chain(recipient)
+    resp_model = ReleaseResponse(
+        status=res["status"],
+        project_id=res.get("project_id", "WATER-001"),
+        tranche_number=res.get("tranche_number"),
+        released_wei=res.get("released_wei"),
+        total_released_wei=res.get("total_released_wei"),
+        remaining_budget_wei=res.get("remaining_budget_wei"),
+        disbursement_allowed=res.get("disbursement_allowed", False),
+        reason=res.get("reason"),
+        explanation=res.get("explanation"),
+        tx_hash=res.get("tx_hash"),
+        mode="local_chain",
+    )
+    if res["status"] == "RELEASED":
+        return resp_model
     return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=resp_model.model_dump())
 
 

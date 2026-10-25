@@ -81,6 +81,8 @@ class ReleaseResponse(BaseModel):
     disbursement_allowed: bool
     reason: Optional[str] = None
     explanation: Optional[str] = None
+    tx_hash: Optional[str] = None
+    mode: Optional[str] = "simulation"
 
 
 class TraceGraphResponse(BaseModel):
@@ -168,3 +170,38 @@ class ClaimRecordResponse(BaseModel):
     recovered_signer: str
     status: str
     submitted_at: int
+
+
+class ChainStatusResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    connected: bool
+    rpc_url: str
+    chain_id: Optional[int] = None
+    expected_chain_id: int
+    block_number: Optional[int] = None
+    contract_address: Optional[str] = None
+    contract_deployed: bool
+    mode: str
+    error: Optional[str] = None
+
+
+class ChainStateResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str
+    project_name: str
+    funding_wei: str
+    total_tranches: int
+    current_tranche: int
+    released_wei: str
+    verified_spend_wei: str
+    is_frozen: bool
+    freeze_reason: Optional[str] = None
+    contract_balance_wei: str
+
+
+class ModeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str
