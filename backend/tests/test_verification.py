@@ -629,6 +629,305 @@ def test_process_claim_duplicate_report_rejection(valid_receipt, domain, registr
     assert res2.reason == "INVOICE_REUSED_ACROSS_REPORTS"
 
 
+def test_process_claim_cumulative_exceeds_invoice_total_rejected(valid_receipt, domain, registry):
+    """
+    Section C1: Through process_claim, claim 300000 then 300000 on a 500000 invoice in SAME report.
+    Second claim is rejected with CLAIM_EXCEEDS_INVOICE_TOTAL, and ledger claimed stays 300000.
+    """
+    ledger = InvoiceLedger()
+    sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+
+    # First claim: 300000
+    res1 = process_claim(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=300000,
+        report_id="REPORT-SAME",
+    )
+    assert res1.status == "VERIFIED"
+    assert res1.claimed_amount == 300000
+    assert res1.remaining_balance == 200000
+
+    rec1 = ledger.get_record(valid_receipt.invoice_nullifier)
+    assert rec1 is not None
+    assert rec1.claimed == 300000
+
+    # Second claim: 300000 on same report
+    res2 = process_claim(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=300000,
+        report_id="REPORT-SAME",
+    )
+    assert res2.status == "REJECTED"
+    assert res2.reason == "CLAIM_EXCEEDS_INVOICE_TOTAL"
+
+    # Crucial ledger state check: claimed remains 300000
+    rec2 = ledger.get_record(valid_receipt.invoice_nullifier)
+    assert rec2 is not None
+    assert rec2.claimed == 300000
+    assert rec2.report_id == "REPORT-SAME"
+
+
+def test_process_claim_fully_claimed_invoice_rejected(valid_receipt, domain, registry):
+    """
+    Section C2: Through process_claim, invoice fully claimed (500000 of 500000), then one more
+    unit (1) is rejected with INVOICE_ALREADY_FULLY_CLAIMED, leaving ledger unchanged.
+    """
+    ledger = InvoiceLedger()
+    sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+
+    # Claim full 500000
+    res1 = process_claim(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=500000,
+        report_id="REPORT-FULL",
+    )
+    assert res1.status == "VERIFIED"
+    assert res1.claimed_amount == 500000
+    assert res1.remaining_balance == 0
+
+    rec1 = ledger.get_record(valid_receipt.invoice_nullifier)
+    assert rec1.claimed == 500000
+
+    # Attempt one more unit (1 minor unit)
+    res2 = process_claim(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=1,
+        report_id="REPORT-FULL",
+    )
+    assert res2.status == "REJECTED"
+    assert res2.reason == "INVOICE_ALREADY_FULLY_CLAIMED"
+
+    # Ledger state unchanged
+    rec2 = ledger.get_record(valid_receipt.invoice_nullifier)
+    assert rec2.claimed == 500000
+    assert rec2.report_id == "REPORT-FULL"
+
+
+def test_cross_project_double_count_rejected(domain, registry):
+    """
+    Section C3: Cross-project double count attack.
+    Same vendor + invoice validly signed separately for Project A and Project B (each signature
+    cryptographically binds its own distinct projectId).
+    When claimed under two different report_ids, second claim is rejected with
+    INVOICE_REUSED_ACROSS_REPORTS, even though projectId differs.
+    Ledger state for Project A remains unmodified.
+    """
+    ledger = InvoiceLedger()
+
+    receipt_a = Receipt(
+        project_id="PROJECT-ALPHA-KENYA",
+        vendor_id="ACME-DRILLING",
+        invoice_id="INV-1042",
+        invoice_total=500000,
+        currency="USD",
+        category="WATER_INFRASTRUCTURE",
+        issued_at=1714000000,
+        evidence_commitment="0x" + "aa" * 32,
+    )
+    sig_a = sign_receipt(receipt_a, TEST_PRIV_KEY, domain)
+
+    receipt_b = Receipt(
+        project_id="PROJECT-BETA-TANZANIA",
+        vendor_id="ACME-DRILLING",
+        invoice_id="INV-1042",
+        invoice_total=500000,
+        currency="USD",
+        category="WATER_INFRASTRUCTURE",
+        issued_at=1714000000,
+        evidence_commitment="0x" + "bb" * 32,
+    )
+    sig_b = sign_receipt(receipt_b, TEST_PRIV_KEY, domain)
+
+    # Signatures differ because project_id is signed into structHash
+    assert sig_a != sig_b
+
+    # Both signatures recover the legitimate vendor address
+    assert recover_signer(receipt_a, sig_a, domain).lower() == TEST_SIGNER.lower()
+    assert recover_signer(receipt_b, sig_b, domain).lower() == TEST_SIGNER.lower()
+
+    # Nullifiers are identical because projectId is excluded from the nullifier formula
+    assert receipt_a.invoice_nullifier == receipt_b.invoice_nullifier
+
+    # First claim under Report A succeeds
+    res_a = process_claim(
+        receipt=receipt_a,
+        signature=sig_a,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=250000,
+        report_id="REPORT-PROJECT-A",
+    )
+    assert res_a.status == "VERIFIED"
+    assert res_a.claimed_amount == 250000
+
+    # Second claim under Report B for Project B must be REJECTED
+    res_b = process_claim(
+        receipt=receipt_b,
+        signature=sig_b,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=250000,
+        report_id="REPORT-PROJECT-B",
+    )
+    assert res_b.status == "REJECTED"
+    assert res_b.reason == "INVOICE_REUSED_ACROSS_REPORTS"
+
+    # Ledger state for Project A remains pristine
+    rec = ledger.get_record(receipt_a.invoice_nullifier)
+    assert rec is not None
+    assert rec.claimed == 250000
+    assert rec.report_id == "REPORT-PROJECT-A"
+
+
+def test_verify_receipt_domain_and_signature_rejections(valid_receipt, domain, registry):
+    """
+    Section C4: Through verify_receipt:
+    - Wrong chainId domain -> SIGNER_VENDOR_MISMATCH
+    - Wrong verifyingContract domain -> SIGNER_VENDOR_MISMATCH
+    - Malformed signatures (empty, 64 bytes, 66 bytes, bad v=29) -> MALFORMED_SIGNATURE
+    Assert the exact reason codes returned by verify_receipt.
+    """
+    valid_sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+
+    # 1. Wrong chainId domain
+    wrong_chain_domain = EIP712Domain(
+        name=domain.name,
+        version=domain.version,
+        chain_id=1,  # Mismatched chain ID
+        verifying_contract=domain.verifying_contract,
+    )
+    res_chain = verify_receipt(
+        receipt=valid_receipt,
+        signature=valid_sig,
+        domain=wrong_chain_domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_chain.status == "REJECTED"
+    assert res_chain.reason == "SIGNER_VENDOR_MISMATCH"
+
+    # 2. Wrong verifyingContract domain
+    wrong_contract_domain = EIP712Domain(
+        name=domain.name,
+        version=domain.version,
+        chain_id=domain.chain_id,
+        verifying_contract="0x2222222222222222222222222222222222222222",
+    )
+    res_contract = verify_receipt(
+        receipt=valid_receipt,
+        signature=valid_sig,
+        domain=wrong_contract_domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_contract.status == "REJECTED"
+    assert res_contract.reason == "SIGNER_VENDOR_MISMATCH"
+
+    # 3. Empty signature
+    res_empty = verify_receipt(
+        receipt=valid_receipt,
+        signature="",
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_empty.status == "REJECTED"
+    assert res_empty.reason == "MALFORMED_SIGNATURE"
+
+    # 4. 64-byte signature
+    res_64 = verify_receipt(
+        receipt=valid_receipt,
+        signature="0x" + "aa" * 64,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_64.status == "REJECTED"
+    assert res_64.reason == "MALFORMED_SIGNATURE"
+
+    # 5. 66-byte signature
+    res_66 = verify_receipt(
+        receipt=valid_receipt,
+        signature="0x" + "aa" * 66,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_66.status == "REJECTED"
+    assert res_66.reason == "MALFORMED_SIGNATURE"
+
+    # 6. Bad v recovery identifier (v=29)
+    valid_sig_bytes = bytes.fromhex(valid_sig[2:])
+    bad_v_sig = "0x" + (valid_sig_bytes[:64] + bytes([29])).hex()
+    res_bad_v = verify_receipt(
+        receipt=valid_receipt,
+        signature=bad_v_sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res_bad_v.status == "REJECTED"
+    assert res_bad_v.reason == "MALFORMED_SIGNATURE"
+
+
+def test_fail_closed_on_unexpected_evidence_exception(valid_receipt, domain, registry):
+    """Any unexpected exception during evidence verification produces REJECTED with INTERNAL_ERROR."""
+    sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+
+    with patch(
+        "backend.app.services.verification.verify_evidence",
+        side_effect=RuntimeError("Simulated evidence subsystem crash"),
+    ):
+        res = verify_receipt(
+            receipt=valid_receipt,
+            signature=sig,
+            domain=domain,
+            registry=registry,
+            allowed_category="WATER_INFRASTRUCTURE",
+            now=1714000000,
+            file_bytes=b"sample",
+            salt=b"\x11" * 32,
+        )
+        assert res.status == "REJECTED"
+        assert res.reason == "INTERNAL_ERROR"
+
+
 def test_signing_cli_missing_key_fails_closed():
     """CLI fails closed when private key environment variable is not configured."""
     import tempfile

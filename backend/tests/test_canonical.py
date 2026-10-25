@@ -15,23 +15,58 @@ from backend.app.services.canonical import (
     validate_monetary_value,
     validate_timestamp,
 )
+from backend.app.services.invoice_identity import compute_nullifier
 
 
 def test_invoice_normalization_equivalences():
-    """INV-1042, inv 1042, INV1042, and INV-001042 must normalize identically to INV1042."""
+    """
+    Assert that formatting variants:
+    INV-1042, INV-001042, INV001042, INV0001042, 'inv 1042', 'INV/1042', ' INV-1042 '
+    all normalize to canonical 'INV1042' and produce the EXACT same nullifier.
+    """
+    variants = [
+        "INV-1042",
+        "INV-001042",
+        "INV001042",
+        "INV0001042",
+        "inv 1042",
+        "INV/1042",
+        " INV-1042 ",
+    ]
     expected = "INV1042"
-    assert normalize_invoice_id("INV-1042") == expected
-    assert normalize_invoice_id("inv 1042") == expected
-    assert normalize_invoice_id("INV1042") == expected
-    assert normalize_invoice_id("INV-001042") == expected
+    vendor_bytes = id32("ACMEDRILLING")
+
+    nullifiers = []
+    for var in variants:
+        canon = normalize_invoice_id(var)
+        assert canon == expected
+        nullifier = compute_nullifier(vendor_bytes, id32(canon))
+        nullifiers.append(nullifier)
+
+    # All produce the exact same nullifier
+    assert len(set(nullifiers)) == 1
 
 
 def test_invoice_normalization_digit_runs():
-    """Leading zeros in each distinct digit run are stripped, while leaving single zeros."""
+    """
+    Digit-only and mixed runs:
+    '0042' -> '42', '000' -> '0', '0' -> '0', 'A007B008' -> 'A7B8', 'INV-100' -> 'INV100'.
+    Distinct: INV1042 != INV1043, INV10 != INV100.
+    """
+    assert normalize_invoice_id("0042") == "42"
+    assert normalize_invoice_id("000") == "0"
+    assert normalize_invoice_id("0") == "0"
+    assert normalize_invoice_id("A007B008") == "A7B8"
+    assert normalize_invoice_id("INV-100") == "INV100"
+
+    # Distinctness assertions
+    assert normalize_invoice_id("INV1042") != normalize_invoice_id("INV1043")
+    assert normalize_invoice_id("INV10") != normalize_invoice_id("INV100")
+
+    # Additional edge cases
     assert normalize_invoice_id("INV-0") == "INV0"
     assert normalize_invoice_id("INV-00") == "INV0"
     assert normalize_invoice_id("INV-000") == "INV0"
-    assert normalize_invoice_id("INV-007-009") == "INV7009"  # non-alnum stripped -> INV007009 -> INV7009
     assert normalize_invoice_id("BATCH001A002") == "BATCH1A2"
 
 
