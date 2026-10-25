@@ -1,0 +1,1139 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TRACE Backend API",
+    "description": "Verifiable NGO Fund Flows & Cryptographic Escrow Engine",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health",
+        "description": "Health check endpoint indicating simulation mode and datastore status.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List Projects",
+        "description": "Lists all registered projects and their escrow states.",
+        "operationId": "list_projects_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Projects Projects Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get Project",
+        "description": "Retrieves detailed project and escrow information by project ID.",
+        "operationId": "get_project_projects__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/trace": {
+      "get": {
+        "tags": [
+          "Trace"
+        ],
+        "summary": "Get Project Trace",
+        "description": "Returns multi-hop fund-flow trace graph for a project,\nreconciled against integer conservation laws.",
+        "operationId": "get_project_trace_projects__id__trace_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceGraphResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/claims": {
+      "post": {
+        "tags": [
+          "Claims"
+        ],
+        "summary": "Submit Claim",
+        "description": "Submits a vendor-signed expenditure receipt for cryptographic verification and claim persistence.\nVerifies the submitted EIP-712 signature using Phase 1 verification logic.\nDoes NOT sign receipts on behalf of callers.",
+        "operationId": "submit_claim_claims_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/release": {
+      "post": {
+        "tags": [
+          "Escrow"
+        ],
+        "summary": "Release Tranche",
+        "description": "Attempts to release the next funding tranche for a project.\nEnforces that verified spending must cover all prior releases.",
+        "operationId": "release_tranche_projects__id__release_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Get Audit Trail",
+        "description": "Retrieves immutable audit trail entries.",
+        "operationId": "get_audit_trail_audit_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by project ID",
+              "title": "Project Id"
+            },
+            "description": "Filter by project ID"
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by severity (INFO, WARNING, CRITICAL)",
+              "title": "Severity"
+            },
+            "description": "Filter by severity (INFO, WARNING, CRITICAL)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEventResponse"
+                  },
+                  "title": "Response Get Audit Trail Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Get Metrics",
+        "description": "Computes security and flow metrics from actual persisted records.",
+        "operationId": "get_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo/reset": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Demo Reset",
+        "description": "Resets the entire database to the deterministic seed state.",
+        "operationId": "demo_reset_demo_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo/scenarios": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Get Demo Scenarios",
+        "description": "Lists all available automated evaluation scenarios.",
+        "operationId": "get_demo_scenarios_demo_scenarios_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioInfo"
+                  },
+                  "type": "array",
+                  "title": "Response Get Demo Scenarios Demo Scenarios Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo/scenarios/{name}/run": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Run Demo Scenario",
+        "description": "Executes a named evaluation scenario and returns detailed results.",
+        "operationId": "run_demo_scenario_demo_scenarios__name__run_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditEventResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "created_at": {
+            "type": "integer",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "event_type",
+          "severity",
+          "details",
+          "created_at"
+        ],
+        "title": "AuditEventResponse"
+      },
+      "ClaimResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "claim_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claim Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Checks"
+          },
+          "disbursement_allowed": {
+            "type": "boolean",
+            "title": "Disbursement Allowed"
+          },
+          "claimed_amount": {
+            "type": "integer",
+            "title": "Claimed Amount",
+            "default": 0
+          },
+          "remaining_balance": {
+            "type": "integer",
+            "title": "Remaining Balance",
+            "default": 0
+          },
+          "recovered_signer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovered Signer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "explanation",
+          "checks",
+          "disbursement_allowed"
+        ],
+        "title": "ClaimResponse"
+      },
+      "ClaimSubmitRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "vendor_id": {
+            "type": "string",
+            "title": "Vendor Id"
+          },
+          "invoice_id": {
+            "type": "string",
+            "title": "Invoice Id"
+          },
+          "invoice_total": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Invoice Total",
+            "description": "Total invoice amount in currency minor units"
+          },
+          "claim_amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Claim Amount",
+            "description": "Claim amount in currency minor units"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "USD"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "issued_at": {
+            "type": "integer",
+            "title": "Issued At"
+          },
+          "evidence_commitment": {
+            "type": "string",
+            "title": "Evidence Commitment"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature",
+            "description": "EIP-712 cryptographic signature from vendor private key"
+          },
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "file_bytes_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Bytes Base64"
+          },
+          "salt_hex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salt Hex"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "vendor_id",
+          "invoice_id",
+          "invoice_total",
+          "claim_amount",
+          "category",
+          "issued_at",
+          "evidence_commitment",
+          "signature",
+          "report_id"
+        ],
+        "title": "ClaimSubmitRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "healthy"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "0.1.0"
+          },
+          "simulation_mode": {
+            "type": "boolean",
+            "title": "Simulation Mode",
+            "default": true
+          },
+          "database": {
+            "type": "string",
+            "title": "Database",
+            "default": "connected"
+          },
+          "timestamp": {
+            "type": "integer",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp"
+        ],
+        "title": "HealthResponse"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "valid_claims": {
+            "type": "integer",
+            "title": "Valid Claims"
+          },
+          "rejected_claims": {
+            "type": "integer",
+            "title": "Rejected Claims"
+          },
+          "forged_attempts_detected": {
+            "type": "integer",
+            "title": "Forged Attempts Detected"
+          },
+          "duplicate_invoice_attempts_blocked": {
+            "type": "integer",
+            "title": "Duplicate Invoice Attempts Blocked"
+          },
+          "release_attempts_blocked": {
+            "type": "integer",
+            "title": "Release Attempts Blocked"
+          },
+          "frozen_projects": {
+            "type": "integer",
+            "title": "Frozen Projects"
+          },
+          "unexplained_trace_discrepancies": {
+            "type": "integer",
+            "title": "Unexplained Trace Discrepancies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid_claims",
+          "rejected_claims",
+          "forged_attempts_detected",
+          "duplicate_invoice_attempts_blocked",
+          "release_attempts_blocked",
+          "frozen_projects",
+          "unexplained_trace_discrepancies"
+        ],
+        "title": "MetricsResponse"
+      },
+      "ProjectResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "funding_wei": {
+            "type": "string",
+            "title": "Funding Wei"
+          },
+          "total_tranches": {
+            "type": "integer",
+            "title": "Total Tranches"
+          },
+          "current_tranche": {
+            "type": "integer",
+            "title": "Current Tranche"
+          },
+          "released_wei": {
+            "type": "string",
+            "title": "Released Wei"
+          },
+          "verified_spend_wei": {
+            "type": "string",
+            "title": "Verified Spend Wei"
+          },
+          "verified_spend_usd_cents": {
+            "type": "integer",
+            "title": "Verified Spend Usd Cents"
+          },
+          "is_frozen": {
+            "type": "boolean",
+            "title": "Is Frozen"
+          },
+          "freeze_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freeze Reason"
+          },
+          "created_at": {
+            "type": "integer",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "integer",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "funding_wei",
+          "total_tranches",
+          "current_tranche",
+          "released_wei",
+          "verified_spend_wei",
+          "verified_spend_usd_cents",
+          "is_frozen",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectResponse"
+      },
+      "ReleaseResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "tranche_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tranche Number"
+          },
+          "released_wei": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released Wei"
+          },
+          "total_released_wei": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Released Wei"
+          },
+          "remaining_budget_wei": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Budget Wei"
+          },
+          "disbursement_allowed": {
+            "type": "boolean",
+            "title": "Disbursement Allowed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "project_id",
+          "disbursement_allowed"
+        ],
+        "title": "ReleaseResponse"
+      },
+      "ScenarioInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "expected_status": {
+            "type": "string",
+            "title": "Expected Status"
+          },
+          "expected_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "category",
+          "description",
+          "expected_status"
+        ],
+        "title": "ScenarioInfo"
+      },
+      "ScenarioRunResponse": {
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "title": "Scenario"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "project_status": {
+            "type": "string",
+            "title": "Project Status"
+          },
+          "next_release_outcome": {
+            "type": "string",
+            "title": "Next Release Outcome"
+          },
+          "next_release_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Release Reason"
+          },
+          "disbursement_allowed": {
+            "type": "boolean",
+            "title": "Disbursement Allowed"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Checks"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenario",
+          "title",
+          "status",
+          "explanation",
+          "project_status",
+          "next_release_outcome",
+          "disbursement_allowed",
+          "checks",
+          "details"
+        ],
+        "title": "ScenarioRunResponse"
+      },
+      "TraceGraphResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "edges": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "discrepancies": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Discrepancies"
+          },
+          "is_conserved": {
+            "type": "boolean",
+            "title": "Is Conserved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_name",
+          "purpose",
+          "events",
+          "edges",
+          "summary",
+          "discrepancies",
+          "is_conserved"
+        ],
+        "title": "TraceGraphResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

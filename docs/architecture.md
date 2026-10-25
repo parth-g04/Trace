@@ -191,3 +191,58 @@ graph LR
 - **Phase 4 (Pending Phase 3):** Multi-hop fund-flow reconciliation, flow conservation checks, simulated second-chain/fiat off-ramp event generator, and privacy commitments.
 - **Phase 5 (Pending Phase 4):** React + Vite dashboard, transfer graph visualization, audit log interface, and REST API integration.
 - **Phase 6 (Pending Phase 5):** Adversarial test suite (forged signatures, replay attacks, duplicate claims), fixed demonstration dataset, benchmark metrics, and spot-audit judge walkthrough.
+
+---
+
+## 7. Milestone 1 (M1): First End-to-End Backend Prototype
+
+### 7.1 Overview & Architecture Boundaries
+Milestone 1 implements the first complete vertical slice of the TRACE backend on top of Phase 1 cryptographic verification:
+1. **Persistence Layer (`backend/app/db.py`):** Transaction-safe SQLite storage with 7 core tables (`projects`, `vendors`, `claims`, `invoice_ledger`, `escrow_state`, `flow_events`, `audit_events`).
+2. **Simulated Escrow (`backend/app/services/escrow_sim.py`):** Enforces purpose-bound tranche disbursement without on-chain settlement. Seeded with `WATER-001` (50 ETH, 5 tranches, 1 ETH = $2,000 USD).
+3. **Multi-Hop Fund Flow Reconciliation (`backend/app/services/trace_graph.py`):** Directed acyclic graph tracking fund lifecycle from genesis donations through allocations, bridges, off-ramps, and vendor claims with integer conservation checks.
+4. **FastAPI REST API (`backend/app/main.py`):** High-performance endpoints with Pydantic request/response validation, CORS support for Vite, and structured error reporting.
+5. **Adversarial Scenarios & Test-Only Vendors (`backend/app/demo/`):** Repeatable execution of 6 core attack and benign scenarios.
+
+### 7.2 Transaction Semantics & Failure Modes
+- **Atomic Operations:** All claim submissions and tranche releases execute inside explicit SQLite transactions (`with conn:`).
+- **Security Rejection Isolation:** When a qualifying security violation occurs (`SIGNER_VENDOR_MISMATCH`, `SIGNATURE_INVALID`, `MALFORMED_SIGNATURE`, `INVOICE_REUSED_ACROSS_REPORTS`, `INVOICE_TOTAL_MISMATCH`, `CATEGORY_NOT_ALLOWED`, `EVIDENCE_COMMITMENT_MISMATCH`):
+  - The rejection is recorded in `audit_events`.
+  - The offending project is marked `is_frozen = 1` with an immutable freeze reason.
+  - A `PROJECT_FROZEN` audit event is emitted.
+  - **Zero Partial Writes:** No records are inserted into `claims`, no modifications occur in `invoice_ledger`, and verified spend totals are left completely untouched.
+- **Cross-Report Protection:** Duplicate submissions of the same vendor invoice across different reports or projects are blocked via canonical nullifiers (`keccak256(abi.encode(vendorId, invoiceId))`), freezing the project attempting reuse without affecting the original project.
+
+### 7.3 REST Endpoint Contract Summary
+
+| Method | Endpoint | Description | Success Code | Error Code |
+|---|---|---|---|---|
+| `GET` | `/health` | Service health, simulation mode, and database status | 200 OK | — |
+| `GET` | `/projects` | List all projects with budgets, spend, and freeze status | 200 OK | — |
+| `GET` | `/projects/{id}` | Detailed project metadata and escrow state | 200 OK | 404 Not Found |
+| `GET` | `/projects/{id}/trace` | Fund-flow directed graph with conservation checks | 200 OK | 404 Not Found |
+| `POST` | `/claims` | Submit vendor receipt for Phase 1 cryptographic verification | 200 OK | 400 Bad Request / 409 Conflict |
+| `POST` | `/projects/{id}/release` | Release next tranche if verified spend covers prior releases | 200 OK | 400 Bad Request |
+| `GET` | `/audit` | Filterable query of immutable audit log entries | 200 OK | — |
+| `GET` | `/metrics` | Security and accounting metrics from persisted records | 200 OK | — |
+| `POST` | `/demo/reset` | Deterministically reset database to initial seed state | 200 OK | — |
+| `GET` | `/demo/scenarios` | Catalog of available attack and evaluation scenarios | 200 OK | — |
+| `POST` | `/demo/scenarios/{name}/run` | Execute automated demo scenario against database | 200 OK | 404 Not Found |
+
+### 7.4 Simulated Components & Hackathon Limitations
+- **Simulated Escrow:** The escrow vault runs in Python/SQLite. On-chain EVM enforcement (`TraceEscrow.sol`) is scheduled for Phase 2.
+- **Simulated Bridge & Off-ramp:** Layer 2 bridging (Arbitrum) and fiat off-ramping (Circle Mint) are synthetic demonstration records carrying test attestations. No actual fiat or cross-chain bridge assets are moved.
+- **Unfreeze Mechanism:** Emergency freezing is fully automated. Multi-sig / DAO unfreeze voting is documented for later milestones.
+
+### 7.5 Exact Commands
+```powershell
+# 1. Activate environment and run full test suite (112 tests)
+backend\.venv\Scripts\python.exe -m pytest -v
+
+# 2. Start API server locally
+backend\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
+
+# 3. Run live demonstration script
+backend\.venv\Scripts\python.exe backend/scripts/live_api_demo.py
+```
+
