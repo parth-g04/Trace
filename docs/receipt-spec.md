@@ -216,3 +216,22 @@ python scripts/sign_receipt.py path/to/receipt.json --output signed_receipt.json
 - **Physical Delivery:** A cryptographically valid vendor signature proves that the holder of the vendor private key signed the statement. It does not prove that goods were delivered in the physical world.
 - **Off-Chain Storage:** Evidence commitment proves document integrity; it does not host or persist off-chain files.
 - **Blockchain Finality:** Phase 1 is an off-chain Python verification prototype. On-chain autonomous enforcement occurs in Phase 2.
+
+---
+
+## 12. Environment Reconciliation & Security Mutation Testing (Phase 1.1)
+
+### 12.1 Authoritative Environment
+- **Virtual Environment Location:** `backend/.venv` (Python 3.14.2). Root `.venv` is intentionally absent to maintain modular separation between backend Python services and node/hardhat tooling in `contracts/` and `frontend/`.
+- **Dependency Reconciliation:** All packages in `backend/requirements.txt` match the active environment pins exactly. Verified clean with `pip check` (0 broken requirements).
+
+### 12.2 Security Mutation Matrix (M1 – M7)
+| Mutation ID | Enforcement Point | Behavior Mutated | Catching Tests (Minimum 2 for M1, M2, M7) |
+|---|---|---|---|
+| **M1** | Signer-Vendor Match | Bypass `recovered_signer != registered_vendor_address` check | `test_signer_vendor_mismatch_rejected`, `test_wrong_key_forgery_rejected`, `test_all_signed_fields_tamper_evident_in_verification` |
+| **M2** | Cross-Report Reuse | Bypass `record.report_id != report_id` rejection in ledger | `test_ledger_rejects_cross_report_reuse`, `test_process_claim_duplicate_report_rejection`, `test_duplicate_invoice_different_evidence_rejected` |
+| **M3** | Spending Limit | Bypass `record.claimed + amount > record.invoice_total` check | `test_ledger_rejects_claim_exceeding_total`, `test_process_claim_ledger_rejection_leaves_state_clean` |
+| **M4** | Category Policy | Bypass category authorization whitelist | `test_unauthorized_category_rejected` |
+| **M5** | Future Timestamp | Bypass `issued_at > now + 86400` check | `test_future_dated_receipt_rejected` |
+| **M6** | Evidence Binding | Bypass `computed_commitment != receipt.evidence_commitment` check | `test_evidence_mismatch_rejected` |
+| **M7** | Low-s Malleability | Bypass `s > SECP256K1_HALF_N` check in signature validation | `test_high_s_malleated_signature_rejected`, `test_malleated_signature_rejected_in_verification` |

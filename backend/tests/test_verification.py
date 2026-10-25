@@ -12,7 +12,13 @@ from backend.app.models.receipt import EIP712Domain, Receipt
 from backend.app.services.canonical import id32
 from backend.app.services.evidence import compute_evidence_commitment
 from backend.app.services.invoice_identity import InvoiceLedger
-from backend.app.services.signatures import recover_signer, sign_receipt
+from backend.app.services.signatures import (
+    SECP256K1_HALF_N,
+    SECP256K1_N,
+    ZERO_ADDRESS,
+    recover_signer,
+    sign_receipt,
+)
 from backend.app.services.verification import (
     VendorRegistry,
     process_claim,
@@ -139,6 +145,258 @@ def test_signer_vendor_mismatch_rejected(valid_receipt, domain, registry):
     assert res.checks["signature_valid"] is True
     assert res.checks["vendor_registered"] is True
     assert res.checks["signer_matches_vendor"] is False
+
+
+def test_wrong_key_forgery_rejected(valid_receipt, domain, registry):
+    """
+    An attacker signing with an unauthorized key (TEST_PRIV_KEY_2) forging a claim
+    for ACME-DRILLING is rejected with SIGNER_VENDOR_MISMATCH in both verify_receipt
+    and process_claim, leaving ledger unchanged.
+    """
+    ledger = InvoiceLedger()
+    sig = sign_receipt(valid_receipt, TEST_PRIV_KEY_2, domain)
+
+    res = verify_receipt(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res.status == "REJECTED"
+    assert res.reason == "SIGNER_VENDOR_MISMATCH"
+
+    claim_res = process_claim(
+        receipt=valid_receipt,
+        signature=sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=100000,
+        report_id="REPORT-FORGERY",
+    )
+    assert claim_res.status == "REJECTED"
+    assert claim_res.reason == "SIGNER_VENDOR_MISMATCH"
+    assert ledger.has_nullifier(valid_receipt.invoice_nullifier) is False
+    assert ledger.record_count() == 0
+
+
+@pytest.mark.parametrize(
+    "tamper_field,tamper_value,expected_reason",
+    [
+        ("project_id", "PROJECT-BETA", "SIGNER_VENDOR_MISMATCH"),
+        ("vendor_id", "MALICIOUS-VENDOR", "UNREGISTERED_VENDOR"),
+        ("invoice_id", "INV-9999", "SIGNER_VENDOR_MISMATCH"),
+        ("invoice_total", 999999, "SIGNER_VENDOR_MISMATCH"),
+        ("currency", "EUR", "SIGNER_VENDOR_MISMATCH"),
+        ("category", "FOOD_SUPPLIES", "SIGNER_VENDOR_MISMATCH"),
+        ("issued_at", 1714000001, "SIGNER_VENDOR_MISMATCH"),
+        ("evidence_commitment", "0x" + "bb" * 32, "SIGNER_VENDOR_MISMATCH"),
+    ],
+)
+def test_all_signed_fields_tamper_evident_in_verification(
+    valid_receipt, domain, registry, tamper_field, tamper_value, expected_reason
+):
+    """
+    Every signed field is tamper-evident:
+    Assert exact status and reason code in verify_receipt AND process_claim,
+    and confirm that failed verification leaves ledger state completely unchanged.
+    """
+    valid_sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+    ledger = InvoiceLedger()
+
+    data = valid_receipt.to_dict()
+    data[tamper_field] = tamper_value
+    tampered_receipt = Receipt(**data)
+
+    # 1. verify_receipt check
+    res = verify_receipt(
+        receipt=tampered_receipt,
+        signature=valid_sig,
+        domain=domain,
+        registry=registry,
+        allowed_category=["WATER_INFRASTRUCTURE", "FOOD_SUPPLIES"],
+        now=1714000000,
+    )
+    assert res.status == "REJECTED"
+    assert res.reason == expected_reason
+
+    # 2. process_claim check
+    claim_res = process_claim(
+        receipt=tampered_receipt,
+        signature=valid_sig,
+        domain=domain,
+        registry=registry,
+        allowed_category=["WATER_INFRASTRUCTURE", "FOOD_SUPPLIES"],
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=100000,
+        report_id="REPORT-TEST",
+    )
+    assert claim_res.status == "REJECTED"
+    assert claim_res.reason == expected_reason
+
+    # 3. Ledger is completely untouched
+    assert ledger.has_nullifier(tampered_receipt.invoice_nullifier) is False
+    assert ledger.has_nullifier(valid_receipt.invoice_nullifier) is False
+    assert ledger.record_count() == 0
+
+
+def test_zero_address_recovery_rejected_in_verification(valid_receipt, domain, registry):
+    """Signer recovery resulting in zero address fails verification closed and touches no ledger."""
+    valid_sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+    ledger = InvoiceLedger()
+
+    with patch(
+        "backend.app.services.signatures.Account.recover_message",
+        return_value=ZERO_ADDRESS,
+    ):
+        res = verify_receipt(
+            receipt=valid_receipt,
+            signature=valid_sig,
+            domain=domain,
+            registry=registry,
+            allowed_category="WATER_INFRASTRUCTURE",
+            now=1714000000,
+        )
+        assert res.status == "REJECTED"
+        assert res.reason == "SIGNATURE_INVALID"
+
+        claim_res = process_claim(
+            receipt=valid_receipt,
+            signature=valid_sig,
+            domain=domain,
+            registry=registry,
+            allowed_category="WATER_INFRASTRUCTURE",
+            now=1714000000,
+            ledger=ledger,
+            claim_amount=100000,
+            report_id="REPORT-TEST",
+        )
+        assert claim_res.status == "REJECTED"
+        assert claim_res.reason == "SIGNATURE_INVALID"
+        assert ledger.record_count() == 0
+
+
+def test_malleated_signature_rejected_in_verification(valid_receipt, domain, registry):
+    """
+    A high-s malleated signature is rejected by verify_receipt and process_claim
+    with MALFORMED_SIGNATURE, leaving ledger untouched.
+    """
+    valid_sig_hex = sign_receipt(valid_receipt, TEST_PRIV_KEY, domain)
+    valid_sig_bytes = bytes.fromhex(valid_sig_hex[2:])
+
+    s = int.from_bytes(valid_sig_bytes[32:64], "big")
+    v = valid_sig_bytes[64]
+    high_s = SECP256K1_N - s
+    malleated_v = 28 if v == 27 else 27
+    malleated_sig = "0x" + (valid_sig_bytes[:32] + high_s.to_bytes(32, "big") + bytes([malleated_v])).hex()
+
+    ledger = InvoiceLedger()
+
+    res = verify_receipt(
+        receipt=valid_receipt,
+        signature=malleated_sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+    )
+    assert res.status == "REJECTED"
+    assert res.reason == "MALFORMED_SIGNATURE"
+    assert res.checks["signature_format_valid"] is False
+
+    claim_res = process_claim(
+        receipt=valid_receipt,
+        signature=malleated_sig,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=100000,
+        report_id="REPORT-MALLEATE",
+    )
+    assert claim_res.status == "REJECTED"
+    assert claim_res.reason == "MALFORMED_SIGNATURE"
+    assert ledger.record_count() == 0
+
+
+def test_duplicate_invoice_different_evidence_rejected(domain, registry):
+    """
+    A validly signed duplicate invoice presenting a different evidence commitment
+    under a second report ID must be rejected with INVOICE_REUSED_ACROSS_REPORTS,
+    and must not mutate the existing ledger record.
+    """
+    ledger = InvoiceLedger()
+
+    receipt1 = Receipt(
+        project_id="PROJECT-ALPHA",
+        vendor_id="ACME-DRILLING",
+        invoice_id="INV-1042",
+        invoice_total=500000,
+        currency="USD",
+        category="WATER_INFRASTRUCTURE",
+        issued_at=1714000000,
+        evidence_commitment="0x" + "11" * 32,
+    )
+    sig1 = sign_receipt(receipt1, TEST_PRIV_KEY, domain)
+
+    # First claim succeeds under REPORT-1
+    res1 = process_claim(
+        receipt=receipt1,
+        signature=sig1,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=200000,
+        report_id="REPORT-1",
+    )
+    assert res1.status == "VERIFIED"
+    assert res1.claimed_amount == 200000
+
+    # Receipt 2: Same vendor, same invoice (using formatting variant INV-001042),
+    # but DIFFERENT evidence commitment and different project
+    receipt2 = Receipt(
+        project_id="PROJECT-BETA",
+        vendor_id="ACME-DRILLING",
+        invoice_id="INV-001042",
+        invoice_total=500000,
+        currency="USD",
+        category="WATER_INFRASTRUCTURE",
+        issued_at=1714000000,
+        evidence_commitment="0x" + "22" * 32,
+    )
+    sig2 = sign_receipt(receipt2, TEST_PRIV_KEY, domain)
+
+    # Prove nullifiers are identical
+    assert receipt1.invoice_nullifier == receipt2.invoice_nullifier
+
+    # Claim under REPORT-2
+    res2 = process_claim(
+        receipt=receipt2,
+        signature=sig2,
+        domain=domain,
+        registry=registry,
+        allowed_category="WATER_INFRASTRUCTURE",
+        now=1714000000,
+        ledger=ledger,
+        claim_amount=150000,
+        report_id="REPORT-2",
+    )
+    assert res2.status == "REJECTED"
+    assert res2.reason == "INVOICE_REUSED_ACROSS_REPORTS"
+
+    # Verify ledger state is pristine: original claim amount remains 200000, report remains REPORT-1
+    rec = ledger.get_record(receipt1.invoice_nullifier)
+    assert rec is not None
+    assert rec.claimed == 200000
+    assert rec.report_id == "REPORT-1"
 
 
 def test_unauthorized_category_rejected(valid_receipt, domain, registry):

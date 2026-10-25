@@ -7,10 +7,13 @@ from eth_account import Account
 from eth_account.messages import _hash_eip191_message
 from eth_utils import keccak, to_checksum_address
 
+from unittest.mock import patch
+
 from backend.app.models.receipt import EIP712Domain, Receipt
 from backend.app.services.signatures import (
     SECP256K1_HALF_N,
     SECP256K1_N,
+    ZERO_ADDRESS,
     SignatureValidationError,
     build_typed_data,
     recover_signer,
@@ -60,10 +63,25 @@ def test_valid_signature_recovery(valid_receipt, default_domain):
 
 def test_different_key_recovers_different_address(valid_receipt, default_domain):
     """Signing with a different private key recovers that key's address, not the vendor."""
-    sig = sign_receipt(valid_receipt, SECONDARY_PRIV_KEY, default_domain)
+    sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, default_domain)
     recovered = recover_signer(valid_receipt, sig, default_domain)
-    assert recovered.lower() == SECONDARY_SIGNER.lower()
-    assert recovered.lower() != EXPECTED_SIGNER.lower()
+    assert recovered.lower() != SECONDARY_SIGNER.lower()
+    
+    sig2 = sign_receipt(valid_receipt, SECONDARY_PRIV_KEY, default_domain)
+    recovered2 = recover_signer(valid_receipt, sig2, default_domain)
+    assert recovered2.lower() == SECONDARY_SIGNER.lower()
+    assert recovered2.lower() != EXPECTED_SIGNER.lower()
+
+
+def test_zero_address_recovery_rejected(valid_receipt, default_domain):
+    """Signer recovery returning zero address is strictly rejected fail-closed."""
+    valid_sig = sign_receipt(valid_receipt, TEST_PRIV_KEY, default_domain)
+    with patch(
+        "backend.app.services.signatures.Account.recover_message",
+        return_value=ZERO_ADDRESS,
+    ):
+        with pytest.raises(SignatureValidationError, match="zero address"):
+            recover_signer(valid_receipt, valid_sig, default_domain)
 
 
 @pytest.mark.parametrize(
