@@ -17,6 +17,9 @@ from typing import Any, Dict, List, Optional
 from backend.app.db import Database
 from backend.app.demo.vendors import (
     ATTACKER_SIGNER,
+    TEST_EVIDENCE_BYTES,
+    TEST_EVIDENCE_COMMITMENT,
+    TEST_EVIDENCE_SALT,
     VENDOR_SOLAR_PUMP,
     VENDOR_UNREGISTERED,
     VENDOR_WELL_DRILL,
@@ -29,9 +32,16 @@ from backend.app.services.signatures import sign_receipt
 SCENARIOS_CATALOG = [
     {
         "name": "valid_claim",
-        "title": "Valid Vendor Claim",
+        "title": "Valid Vendor Claim (Evidence Verified)",
         "category": "BENIGN",
-        "description": "Authentic vendor-signed receipt for approved water infrastructure expenditure ($5,000 USD).",
+        "description": "Authentic vendor-signed receipt for approved water infrastructure expenditure ($5,000 USD) with cryptographically verified invoice evidence commitment.",
+        "expected_status": "VERIFIED",
+    },
+    {
+        "name": "valid_claim_evidence_omitted",
+        "title": "Valid Vendor Claim (Evidence Omitted)",
+        "category": "BENIGN",
+        "description": "Authentic vendor-signed receipt where invoice evidence file is omitted. Verifies receipt signature and ledger state without evidence commitment check.",
         "expected_status": "VERIFIED",
     },
     {
@@ -90,11 +100,61 @@ def run_scenario(name: str, db: Database) -> Dict[str, Any]:
     escrow = SimulatedEscrowService(db)
     now = int(time.time())
 
+    # Ensure Tranche 1 is released if project is currently unreleased at Tranche 0
+    proj_water = db.get_project("WATER-001")
+    if proj_water and proj_water["current_tranche"] == 0 and not proj_water["is_frozen"]:
+        db.release_next_tranche("WATER-001")
+
     if name == "valid_claim":
         rec = Receipt(
             project_id="WATER-001",
             vendor_id=VENDOR_WELL_DRILL.vendor_id,
             invoice_id="INV-DEMO-001",
+            invoice_total=500000,  # $5,000 USD
+            currency="USD",
+            category="WATER_INFRASTRUCTURE",
+            issued_at=now,
+            evidence_commitment=TEST_EVIDENCE_COMMITMENT,
+        )
+        sig = sign_receipt(rec, VENDOR_WELL_DRILL.private_key, domain)
+
+        claim_res = db.process_and_persist_claim(
+            receipt=rec,
+            signature=sig,
+            claim_amount=500000,
+            report_id="REPORT-DEMO-01",
+            domain=domain,
+            now=now,
+            file_bytes=TEST_EVIDENCE_BYTES,
+            salt=TEST_EVIDENCE_SALT,
+        )
+
+        is_frozen, freeze_reason = db.is_project_frozen("WATER-001")
+        release_eval = escrow.evaluate_release("WATER-001")
+
+        return {
+            "scenario": "valid_claim",
+            "title": "Valid Vendor Claim (Evidence Verified)",
+            "status": claim_res["status"],
+            "reason": claim_res.get("reason"),
+            "explanation": claim_res["explanation"],
+            "project_status": "FROZEN" if is_frozen else "ACTIVE",
+            "next_release_outcome": "ALLOWED" if release_eval["disbursement_allowed"] else "BLOCKED",
+            "next_release_reason": release_eval.get("reason"),
+            "disbursement_allowed": claim_res["disbursement_allowed"],
+            "checks": claim_res["checks"],
+            "details": {
+                "claim_id": claim_res.get("claim_id"),
+                "claimed_amount": claim_res.get("claimed_amount"),
+                "remaining_balance": claim_res.get("remaining_balance"),
+            },
+        }
+
+    elif name == "valid_claim_evidence_omitted":
+        rec = Receipt(
+            project_id="WATER-001",
+            vendor_id=VENDOR_WELL_DRILL.vendor_id,
+            invoice_id="INV-DEMO-OMIT-001",
             invoice_total=500000,  # $5,000 USD
             currency="USD",
             category="WATER_INFRASTRUCTURE",
@@ -107,17 +167,19 @@ def run_scenario(name: str, db: Database) -> Dict[str, Any]:
             receipt=rec,
             signature=sig,
             claim_amount=500000,
-            report_id="REPORT-DEMO-01",
+            report_id="REPORT-DEMO-OMIT-01",
             domain=domain,
             now=now,
+            file_bytes=None,
+            salt=None,
         )
 
         is_frozen, freeze_reason = db.is_project_frozen("WATER-001")
         release_eval = escrow.evaluate_release("WATER-001")
 
         return {
-            "scenario": "valid_claim",
-            "title": "Valid Vendor Claim",
+            "scenario": "valid_claim_evidence_omitted",
+            "title": "Valid Vendor Claim (Evidence Omitted)",
             "status": claim_res["status"],
             "reason": claim_res.get("reason"),
             "explanation": claim_res["explanation"],

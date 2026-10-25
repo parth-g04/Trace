@@ -35,14 +35,14 @@ def temp_db():
 
 
 def test_schema_init_and_deterministic_reset(temp_db):
-    """Verifies schema creation and deterministic seeding."""
+    """Verifies schema creation and deterministic seeding at Tranche 0."""
     proj = temp_db.get_project("WATER-001")
     assert proj is not None
     assert proj["name"] == "Clean Water Initiative Kenya"
     assert proj["purpose"] == "WATER_INFRASTRUCTURE"
     assert int(proj["funding_wei"]) == 50 * 10**18
-    assert proj["current_tranche"] == 1
-    assert int(proj["released_wei"]) == 10 * 10**18
+    assert proj["current_tranche"] == 0
+    assert int(proj["released_wei"]) == 0
     assert int(proj["verified_spend_wei"]) == 0
     assert proj["is_frozen"] == 0
 
@@ -53,13 +53,25 @@ def test_schema_init_and_deterministic_reset(temp_db):
     assert "SOLAR-PUMP-02" in vendor_ids
 
     flows = temp_db.get_flow_events("WATER-001")
-    assert len(flows) == 4
-    event_types = [f["event_type"] for f in flows]
-    assert event_types == ["DONATION", "ALLOCATION", "BRIDGE", "OFFRAMP"]
+    assert len(flows) == 1
+    assert flows[0]["event_type"] == "DONATION"
 
     audits = temp_db.get_audit_events("WATER-001")
     assert len(audits) >= 1
     assert audits[0]["event_type"] == "DEMO_RESET"
+
+
+def test_seeded_complete_trace(temp_db):
+    """Verifies seeding complete 6-hop trace with zero residual."""
+    temp_db.reset_demo_state(seed_complete_trace=True)
+    proj = temp_db.get_project("WATER-001")
+    assert proj["current_tranche"] == 1
+    assert int(proj["released_wei"]) == 10 * 10**18
+    assert int(proj["verified_spend_wei"]) == 10 * 10**18
+    flows = temp_db.get_flow_events("WATER-001")
+    assert len(flows) == 6
+    event_types = [f["event_type"] for f in flows]
+    assert event_types == ["DONATION", "ALLOCATION", "SWAP", "BRIDGE", "OFFRAMP", "VENDOR_PAYMENT"]
 
 
 def test_persistence_across_connections():
@@ -101,6 +113,10 @@ def test_atomic_claim_processing_success(temp_db):
 
     sig = sign_receipt(rec, priv_key, domain)
 
+    # Release Tranche 1 first to disburse operating funds
+    release_res = temp_db.release_next_tranche("WATER-001")
+    assert release_res["status"] == "RELEASED"
+
     res = temp_db.process_and_persist_claim(
         receipt=rec,
         signature=sig,
@@ -129,6 +145,13 @@ def test_atomic_claim_processing_success(temp_db):
     audits = temp_db.get_audit_events("WATER-001")
     audit_types = [a["event_type"] for a in audits]
     assert "CLAIM_VERIFIED" in audit_types
+
+    # Verify complete 6-hop chain
+    flows = temp_db.get_flow_events("WATER-001")
+    assert len(flows) == 6
+    assert [f["event_type"] for f in flows] == [
+        "DONATION", "ALLOCATION", "SWAP", "BRIDGE", "OFFRAMP", "VENDOR_PAYMENT"
+    ]
 
 
 def test_rejection_without_partial_writes(temp_db):

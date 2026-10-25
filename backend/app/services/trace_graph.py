@@ -31,14 +31,20 @@ class TraceGraphReconciler:
     """
 
     @staticmethod
-    def reconcile(events: Sequence[Dict[str, Any]]) -> Tuple[bool, List[TraceDiscrepancy]]:
+    def reconcile(
+        events: Sequence[Dict[str, Any]],
+        require_matching_vendor_payment: bool = False,
+        verified_claim_ids: Optional[Set[str]] = None,
+    ) -> Tuple[bool, List[TraceDiscrepancy]]:
         """
         Validates the conservation of flow and structural integrity of events:
         1. Root events (DONATION) have no parent.
         2. Non-root events must have a valid existing parent_event_id.
-        3. Child input_asset must match parent output_asset (never mix ETH and USD).
+        3. Child input_asset must match parent output_asset (never mix ETH, USDC, or USD_CENTS).
         4. Sum of child inputs must not exceed parent output (no overspending).
-        5. Off-ramp and Bridge events must carry attestations and be marked simulated.
+        5. Off-ramp, Bridge, and Swap events must carry attestations and be marked simulated.
+        6. Detects OFFRAMP events with no downstream VENDOR_PAYMENT when required.
+        7. Detects VENDOR_PAYMENT events that do not link to an authentic verified claim record.
         """
         discrepancies: List[TraceDiscrepancy] = []
         events_by_id: Dict[str, Dict[str, Any]] = {}
@@ -103,7 +109,7 @@ class TraceGraphReconciler:
                 else:
                     children_by_parent.setdefault(parent_id, []).append(evt)
 
-                    # Check asset continuity
+                    # Check asset continuity across hops
                     parent_evt = events_by_id[parent_id]
                     if evt["input_asset"] != parent_evt["output_asset"]:
                         discrepancies.append(
@@ -118,7 +124,7 @@ class TraceGraphReconciler:
                             )
                         )
 
-            # Check simulated annotations for offramp and bridge
+            # Check simulated annotations for offramp, bridge, and swap
             if etype in ("BRIDGE", "OFFRAMP", "SWAP"):
                 if not evt.get("is_simulated"):
                     discrepancies.append(
@@ -166,11 +172,63 @@ class TraceGraphReconciler:
                     )
                 )
 
+        # 3. Check for OFFRAMP without matching VENDOR_PAYMENT child events
+        for evt in events:
+            if evt["event_type"] == "OFFRAMP":
+                eid = evt["event_id"]
+                children = children_by_parent.get(eid, [])
+                payment_children = [c for c in children if c["event_type"] == "VENDOR_PAYMENT"]
+                if not payment_children:
+                    severity = "CRITICAL" if require_matching_vendor_payment else "WARNING"
+                    discrepancies.append(
+                        TraceDiscrepancy(
+                            code="UNMATCHED_OFFRAMP",
+                            severity=severity,
+                            affected_event_ids=[eid],
+                            explanation=(
+                                f"OFFRAMP event {eid} has no downstream VENDOR_PAYMENT child events "
+                                f"accounting for the disbursed fiat funds."
+                            ),
+                        )
+                    )
+
+        # 4. Check for VENDOR_PAYMENT referencing unverified or missing claim
+        if verified_claim_ids is not None:
+            for evt in events:
+                if evt["event_type"] == "VENDOR_PAYMENT":
+                    eid = evt["event_id"]
+                    meta = evt.get("metadata")
+                    if not isinstance(meta, dict):
+                        if isinstance(evt.get("metadata_json"), str):
+                            try:
+                                meta = json.loads(evt["metadata_json"])
+                            except Exception:
+                                meta = {}
+                        else:
+                            meta = {}
+                    claim_id = meta.get("claim_id")
+                    if not claim_id or claim_id not in verified_claim_ids:
+                        discrepancies.append(
+                            TraceDiscrepancy(
+                                code="UNVERIFIED_PAYMENT_CLAIM",
+                                severity="CRITICAL",
+                                affected_event_ids=[eid],
+                                explanation=(
+                                    f"VENDOR_PAYMENT event {eid} references unverified or non-existent "
+                                    f"claim ID '{claim_id}'."
+                                ),
+                            )
+                        )
+
         has_critical = any(d.severity == "CRITICAL" for d in discrepancies)
         return not has_critical, discrepancies
 
 
-def build_trace_graph(db: Database, project_id: str) -> Dict[str, Any]:
+def build_trace_graph(
+    db: Database,
+    project_id: str,
+    require_matching_vendor_payment: bool = False,
+) -> Dict[str, Any]:
     """
     Constructs the complete traceable graph for a project, including:
     - Flow events list
@@ -191,13 +249,22 @@ def build_trace_graph(db: Database, project_id: str) -> Dict[str, Any]:
         }
 
     raw_events = db.get_flow_events(project_id)
-    is_conserved, discrepancies = TraceGraphReconciler.reconcile(raw_events)
+    claims = db.get_claims(project_id)
+    verified_claim_ids = {c["claim_id"] for c in claims if c["status"] == "VERIFIED"}
+
+    is_conserved, discrepancies = TraceGraphReconciler.reconcile(
+        raw_events,
+        require_matching_vendor_payment=require_matching_vendor_payment,
+        verified_claim_ids=verified_claim_ids,
+    )
 
     events_list: List[Dict[str, Any]] = []
     edges: List[Dict[str, str]] = []
 
     total_donated_wei = 0
     total_allocated_wei = 0
+    total_swapped_usdc = 0
+    total_bridged_usdc = 0
     total_offramped_usd_cents = 0
     total_paid_usd_cents = 0
 
@@ -221,10 +288,16 @@ def build_trace_graph(db: Database, project_id: str) -> Dict[str, Any]:
             total_donated_wei += int(e["output_amount"])
         elif etype == "ALLOCATION":
             total_allocated_wei += int(e["output_amount"])
+        elif etype == "SWAP":
+            total_swapped_usdc += int(e["output_amount"])
+        elif etype == "BRIDGE":
+            total_bridged_usdc += int(e["output_amount"])
         elif etype == "OFFRAMP":
             total_offramped_usd_cents += int(e["output_amount"])
         elif etype == "VENDOR_PAYMENT":
             total_paid_usd_cents += int(e["output_amount"])
+
+    offramp_residual_usd_cents = total_offramped_usd_cents - total_paid_usd_cents
 
     return {
         "project_id": proj["id"],
@@ -235,8 +308,11 @@ def build_trace_graph(db: Database, project_id: str) -> Dict[str, Any]:
         "summary": {
             "total_donated_wei": str(total_donated_wei),
             "total_allocated_wei": str(total_allocated_wei),
+            "total_swapped_usdc": total_swapped_usdc,
+            "total_bridged_usdc": total_bridged_usdc,
             "total_offramped_usd_cents": total_offramped_usd_cents,
             "total_paid_usd_cents": total_paid_usd_cents,
+            "offramp_residual_usd_cents": offramp_residual_usd_cents,
             "verified_spend_wei": proj["verified_spend_wei"],
             "verified_spend_usd_cents": proj["verified_spend_usd_cents"],
         },

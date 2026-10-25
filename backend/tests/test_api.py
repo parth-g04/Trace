@@ -148,9 +148,22 @@ def test_project_trace_endpoint(client):
     assert res.status_code == 200
     trace = res.json()
     assert trace["project_id"] == "WATER-001"
-    assert len(trace["events"]) == 4
-    assert len(trace["edges"]) == 3
+    assert len(trace["events"]) == 1
+    assert len(trace["edges"]) == 0
     assert trace["is_conserved"] is True
+
+    # After releasing Tranche 1 and submitting valid claim: full 6-hop chain
+    res_release = client.post("/projects/WATER-001/release")
+    assert res_release.status_code == 200
+    res_claim = client.post("/demo/scenarios/valid_claim/run")
+    assert res_claim.status_code == 200
+
+    res2 = client.get("/projects/WATER-001/trace")
+    assert res2.status_code == 200
+    trace2 = res2.json()
+    assert len(trace2["events"]) == 6
+    assert len(trace2["edges"]) == 5
+    assert trace2["is_conserved"] is True
 
 
 def test_post_claims_valid(client):
@@ -272,9 +285,16 @@ def test_post_claims_duplicate_conflict(client):
 
 
 def test_release_tranche_blocked_insufficient_spend(client):
-    res = client.post("/projects/WATER-001/release")
-    assert res.status_code == 400
-    data = res.json()
+    # Tranche 1 releases without spending requirement
+    res1 = client.post("/projects/WATER-001/release")
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "RELEASED"
+    assert res1.json()["tranche_number"] == 1
+
+    # Tranche 2 is blocked because verified spend is 0 (requires 10 ETH)
+    res2 = client.post("/projects/WATER-001/release")
+    assert res2.status_code == 400
+    data = res2.json()
     assert data["status"] == "BLOCKED"
     assert data["reason"] == "INSUFFICIENT_VERIFIED_SPEND"
     assert data["disbursement_allowed"] is False
@@ -303,7 +323,7 @@ def test_demo_scenarios_and_reset(client):
     res_cat = client.get("/demo/scenarios")
     assert res_cat.status_code == 200
     catalog = res_cat.json()
-    assert len(catalog) == 6
+    assert len(catalog) == 7
 
     # Run valid claim scenario
     res_run = client.post("/demo/scenarios/valid_claim/run")

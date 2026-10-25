@@ -84,8 +84,13 @@ def test_tranche_1_release_without_spending(fresh_db):
 
 def test_tranche_2_blocked_without_verified_spend(fresh_db):
     """Tranche 2 is BLOCKED when verified spend has not covered Tranche 1."""
-    # In default reset state, Tranche 1 is released (10 ETH) with 0 spend verified
     escrow = SimulatedEscrowService(fresh_db)
+    # Release Tranche 1 first
+    res1 = escrow.release_next_tranche("WATER-001")
+    assert res1["status"] == "RELEASED"
+    assert res1["tranche_number"] == 1
+
+    # At Tranche 1 with 0 verified spend, Tranche 2 is blocked
     readiness = escrow.evaluate_release("WATER-001")
     assert readiness["disbursement_allowed"] is False
     assert readiness["status"] == "BLOCKED"
@@ -99,6 +104,12 @@ def test_tranche_2_blocked_without_verified_spend(fresh_db):
 
 def test_tranche_2_unlocked_after_verified_spend(fresh_db):
     """Tranche 2 unlocks after verified claims cover the 10 ETH previously released."""
+    escrow = SimulatedEscrowService(fresh_db)
+    # Release Tranche 1 first
+    res1 = escrow.release_next_tranche("WATER-001")
+    assert res1["status"] == "RELEASED"
+    assert res1["tranche_number"] == 1
+
     # Spend required: 10 ETH = $20,000 USD = 2,000,000 cents
     priv_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     domain = EIP712Domain()
@@ -126,7 +137,6 @@ def test_tranche_2_unlocked_after_verified_spend(fresh_db):
     )
     assert claim_res["status"] == "VERIFIED"
 
-    escrow = SimulatedEscrowService(fresh_db)
     readiness = escrow.evaluate_release("WATER-001")
     assert readiness["disbursement_allowed"] is True
     assert readiness["status"] == "READY"

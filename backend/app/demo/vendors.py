@@ -66,3 +66,20 @@ DEMO_VENDORS_MAP: Dict[str, DemoVendor] = {
     VENDOR_SOLAR_PUMP.vendor_id: VENDOR_SOLAR_PUMP,
     VENDOR_UNREGISTERED.vendor_id: VENDOR_UNREGISTERED,
 }
+
+# =============================================================================
+# DETERMINISTIC TEST-ONLY EVIDENCE PAYLOAD AND COMMITMENT
+# Computed via Phase 1 compute_evidence_commitment:
+# commitment = keccak256(abi.encode(bytes32 salt, bytes32 sha256(file_bytes)))
+# =============================================================================
+from backend.app.services.evidence import compute_evidence_commitment
+
+TEST_EVIDENCE_BYTES: bytes = (
+    b"TRACE-DEMO-INVOICE: Nairobi Borehole Drilling Ltd - Turkana Borehole #4 - "
+    b"Hydrogeological Survey, Drilling Rig Logistics, and Well Completion Certificate."
+)
+TEST_EVIDENCE_SALT: bytes = bytes.fromhex("11" * 32)
+TEST_EVIDENCE_COMMITMENT: str = "0x" + compute_evidence_commitment(
+    TEST_EVIDENCE_BYTES, TEST_EVIDENCE_SALT
+).hex()
+

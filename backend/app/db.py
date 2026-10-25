@@ -219,14 +219,23 @@ class Database:
             if self._shared_conn is None:
                 conn.close()
 
-    def reset_demo_state(self) -> None:
+    def reset_demo_state(self, seed_complete_trace: bool = False) -> None:
         """
-        Deterministically resets the database to the initial seed state:
-        - Project WATER-001 (50 ETH funding, 5 tranches, 10 ETH released as Tranche 1).
+        Deterministically resets the database to the initial seed state.
+        
+        By default (seed_complete_trace=False):
+        - Project WATER-001 at Tranche 0 (50 ETH funding, 0 released, 0 spend, not frozen).
+        - Escrow state at Tranche 0 (0 released).
         - Registered demo vendors (WELL-DRILL-01, SOLAR-PUMP-02).
-        - Initial flow events: DONATION (50 ETH), ALLOCATION (10 ETH Tranche 1),
-          BRIDGE (10 ETH, simulated), OFFRAMP (10 ETH -> $20,000 USD fiat, simulated).
+        - Initial genesis flow event: DONATION (50 ETH).
         - Audit trail entry for DEMO_RESET.
+
+        When seed_complete_trace=True:
+        - Seeds the complete, fully-conserved 6-hop flow chain with zero residual:
+          DONATION (50 ETH) -> ALLOCATION (10 ETH) -> SWAP (20,000 USDC) ->
+          BRIDGE (20,000 USDC) -> OFFRAMP ($20,000 USD) -> VENDOR_PAYMENT ($20,000 USD).
+        - Project and escrow reflect Tranche 1 released and $20,000 verified spend.
+        - Off-ramp residual is exactly 0.
         """
         self.init_schema()
         conn = self.get_connection()
@@ -237,8 +246,10 @@ class Database:
         canonical_project_id = normalize_identifier(project_id)
         total_funding_wei = 50 * 10**18  # 50 ETH
         tranche_size_wei = 10 * 10**18   # 10 ETH
-        initial_released_wei = 10 * 10**18  # Tranche 1 pre-released
+        initial_released_wei = 10 * 10**18
         eth_usd_rate_cents = 200000  # $2,000.00 per ETH
+        initial_usd_cents = 2000000  # 2,000,000 cents ($20,000)
+        usdc_units = 20000 * 10**6   # 20,000 USDC with 6 decimal places = 20,000,000,000 units
 
         # Demo vendor constants
         demo_vendors = [
@@ -267,6 +278,11 @@ class Database:
                 conn.execute("DELETE FROM vendors;")
                 conn.execute("DELETE FROM projects;")
 
+                cur_tranche = 1 if seed_complete_trace else 0
+                rel_wei = str(initial_released_wei) if seed_complete_trace else "0"
+                ver_spend_wei = str(initial_released_wei) if seed_complete_trace else "0"
+                ver_spend_usd = initial_usd_cents if seed_complete_trace else 0
+
                 # Seed Project
                 conn.execute(
                     """
@@ -283,10 +299,10 @@ class Database:
                         "WATER_INFRASTRUCTURE",
                         str(total_funding_wei),
                         5,
-                        1,
-                        str(initial_released_wei),
-                        "0",
-                        0,
+                        cur_tranche,
+                        rel_wei,
+                        ver_spend_wei,
+                        ver_spend_usd,
                         0,
                         None,
                         now,
@@ -306,8 +322,8 @@ class Database:
                     (
                         project_id,
                         str(total_funding_wei),
-                        str(initial_released_wei),
-                        1,
+                        rel_wei,
+                        cur_tranche,
                         5,
                         str(tranche_size_wei),
                         eth_usd_rate_cents,
@@ -327,7 +343,6 @@ class Database:
                         (v_id, c_id, v_name, v_addr, now),
                     )
 
-                # Seed Initial Fund Flows for Tranche 1
                 # 1. DONATION (50 ETH deposited into Escrow)
                 conn.execute(
                     """
@@ -354,84 +369,183 @@ class Database:
                     ),
                 )
 
-                # 2. ALLOCATION (Tranche 1 allocated: 10 ETH)
-                conn.execute(
-                    """
-                    INSERT INTO flow_events (
-                        event_id, project_id, event_type, parent_event_id,
-                        input_asset, input_amount, output_asset, output_amount,
-                        conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "EVT-ALLOC-T1",
-                        project_id,
-                        "ALLOCATION",
-                        "EVT-DONATION-001",
-                        "ETH",
-                        str(initial_released_wei),
-                        "ETH",
-                        str(initial_released_wei),
-                        None,
-                        1,
-                        "SIMULATED_ALLOCATION:tranche=1",
-                        json.dumps({"tranche": 1, "status": "RELEASED_TO_OPERATING_ACCOUNT"}),
-                        now,
-                    ),
-                )
+                if seed_complete_trace:
+                    # 2. ALLOCATION (Tranche 1 allocated: 10 ETH)
+                    conn.execute(
+                        """
+                        INSERT INTO flow_events (
+                            event_id, project_id, event_type, parent_event_id,
+                            input_asset, input_amount, output_asset, output_amount,
+                            conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "EVT-ALLOC-T1",
+                            project_id,
+                            "ALLOCATION",
+                            "EVT-DONATION-001",
+                            "ETH",
+                            str(initial_released_wei),
+                            "ETH",
+                            str(initial_released_wei),
+                            None,
+                            1,
+                            "SIMULATED_ALLOCATION:tranche=1",
+                            json.dumps({"tranche": 1, "status": "RELEASED_TO_OPERATING_ACCOUNT"}),
+                            now,
+                        ),
+                    )
 
-                # 3. BRIDGE (10 ETH bridged to local operating network)
-                conn.execute(
-                    """
-                    INSERT INTO flow_events (
-                        event_id, project_id, event_type, parent_event_id,
-                        input_asset, input_amount, output_asset, output_amount,
-                        conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "EVT-BRIDGE-T1",
-                        project_id,
-                        "BRIDGE",
-                        "EVT-ALLOC-T1",
-                        "ETH",
-                        str(initial_released_wei),
-                        "ETH",
-                        str(initial_released_wei),
-                        None,
-                        1,
-                        "SIMULATED_BRIDGE_ATTESTATION:relayer=ArbitrumBridge_Sim:tx_bridge_t1",
-                        json.dumps({"destination_network": "Arbitrum One (Simulated)"}),
-                        now,
-                    ),
-                )
+                    # 3. SWAP (10 ETH -> 20,000 USDC)
+                    conn.execute(
+                        """
+                        INSERT INTO flow_events (
+                            event_id, project_id, event_type, parent_event_id,
+                            input_asset, input_amount, output_asset, output_amount,
+                            conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "EVT-SWAP-T1",
+                            project_id,
+                            "SWAP",
+                            "EVT-ALLOC-T1",
+                            "ETH",
+                            str(initial_released_wei),
+                            "USDC",
+                            str(usdc_units),
+                            2000,
+                            1,
+                            "SIMULATED_SWAP_ATTESTATION:dex=Uniswap_V3_Sim:pair=ETH-USDC:rate=2000:tranche=1",
+                            json.dumps({"dex": "Uniswap V3 Simulation", "rate": "2000 USDC/ETH", "tranche": 1}),
+                            now,
+                        ),
+                    )
 
-                # 4. OFFRAMP (10 ETH off-ramped to $20,000 USD fiat operating funds)
-                initial_usd_cents = (initial_released_wei * eth_usd_rate_cents) // (10**18)  # 2,000,000 cents ($20,000)
-                conn.execute(
-                    """
-                    INSERT INTO flow_events (
-                        event_id, project_id, event_type, parent_event_id,
-                        input_asset, input_amount, output_asset, output_amount,
-                        conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "EVT-OFFRAMP-T1",
-                        project_id,
-                        "OFFRAMP",
-                        "EVT-BRIDGE-T1",
-                        "ETH",
-                        str(initial_released_wei),
-                        "USD_CENTS",
-                        str(initial_usd_cents),
-                        eth_usd_rate_cents,
-                        1,
-                        "SIMULATED_OFFRAMP_ATTESTATION:provider=Circle_Sim:ref=sim_offramp_water001_t1:status=SETTLED",
-                        json.dumps({"provider": "Circle Mint Simulation", "settlement_currency": "USD"}),
-                        now,
-                    ),
-                )
+                    # 4. BRIDGE (20,000 USDC L1 -> L2)
+                    conn.execute(
+                        """
+                        INSERT INTO flow_events (
+                            event_id, project_id, event_type, parent_event_id,
+                            input_asset, input_amount, output_asset, output_amount,
+                            conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "EVT-BRIDGE-T1",
+                            project_id,
+                            "BRIDGE",
+                            "EVT-SWAP-T1",
+                            "USDC",
+                            str(usdc_units),
+                            "USDC",
+                            str(usdc_units),
+                            None,
+                            1,
+                            "SIMULATED_BRIDGE_ATTESTATION:relayer=ArbitrumBridge_Sim:tx_bridge_t1",
+                            json.dumps({"destination_network": "Arbitrum One (Simulated)", "tranche": 1}),
+                            now,
+                        ),
+                    )
+
+                    # 5. OFFRAMP (20,000 USDC -> $20,000 USD fiat = 2,000,000 cents)
+                    conn.execute(
+                        """
+                        INSERT INTO flow_events (
+                            event_id, project_id, event_type, parent_event_id,
+                            input_asset, input_amount, output_asset, output_amount,
+                            conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "EVT-OFFRAMP-T1",
+                            project_id,
+                            "OFFRAMP",
+                            "EVT-BRIDGE-T1",
+                            "USDC",
+                            str(usdc_units),
+                            "USD_CENTS",
+                            str(initial_usd_cents),
+                            100,
+                            1,
+                            "SIMULATED_OFFRAMP_ATTESTATION:provider=Circle_Sim:ref=sim_offramp_water001_t1:status=SETTLED",
+                            json.dumps({"provider": "Circle Mint Simulation", "settlement_currency": "USD", "tranche": 1}),
+                            now,
+                        ),
+                    )
+
+                    # 6. VENDOR_PAYMENT ($20,000 USD fully claiming off-ramped funds -> zero residual)
+                    seed_claim_id = "CLM-SEED-01"
+                    conn.execute(
+                        """
+                        INSERT INTO flow_events (
+                            event_id, project_id, event_type, parent_event_id,
+                            input_asset, input_amount, output_asset, output_amount,
+                            conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            f"EVT-PAY-{seed_claim_id}",
+                            project_id,
+                            "VENDOR_PAYMENT",
+                            "EVT-OFFRAMP-T1",
+                            "USD_CENTS",
+                            str(initial_usd_cents),
+                            "USD_CENTS",
+                            str(initial_usd_cents),
+                            None,
+                            1,
+                            f"VENDOR_PAYMENT_CONFIRMATION:claim_id={seed_claim_id}:vendor=WELL-DRILL-01",
+                            json.dumps(
+                                {
+                                    "claim_id": seed_claim_id,
+                                    "vendor_id": "WELL-DRILL-01",
+                                    "invoice_id": "INV-SEED-01",
+                                    "category": "WATER_INFRASTRUCTURE",
+                                }
+                            ),
+                            now,
+                        ),
+                    )
+
+                    # Seed matching verified claim and ledger records
+                    seed_nullifier = "0x" + "99" * 32
+                    conn.execute(
+                        """
+                        INSERT INTO invoice_ledger (
+                            nullifier, invoice_total, claimed, report_id, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (seed_nullifier, initial_usd_cents, initial_usd_cents, "REPORT-SEED-01", now, now),
+                    )
+
+                    conn.execute(
+                        """
+                        INSERT INTO claims (
+                            claim_id, project_id, vendor_id, invoice_id, nullifier, report_id,
+                            claim_amount, invoice_total, currency, category, issued_at,
+                            evidence_commitment, signature, recovered_signer, status, submitted_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            seed_claim_id,
+                            project_id,
+                            "WELL-DRILL-01",
+                            "INV-SEED-01",
+                            seed_nullifier,
+                            "REPORT-SEED-01",
+                            initial_usd_cents,
+                            initial_usd_cents,
+                            "USD",
+                            "WATER_INFRASTRUCTURE",
+                            now,
+                            "0x" + "aa" * 32,
+                            "0x" + "00" * 65,
+                            to_checksum_address("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+                            "VERIFIED",
+                            now,
+                        ),
+                    )
 
                 # Audit Event: Reset Completed
                 conn.execute(
@@ -446,7 +560,7 @@ class Database:
                         project_id,
                         "INFO",
                         "DETERMINISTIC_SEED",
-                        json.dumps({"message": "Database reset to deterministic seed state"}),
+                        json.dumps({"message": "Database reset to deterministic seed state", "complete_trace": seed_complete_trace}),
                         now,
                     ),
                 )
@@ -628,6 +742,23 @@ class Database:
                 "SELECT * FROM flow_events WHERE project_id = ? ORDER BY created_at ASC",
                 (p_id,),
             )
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            if self._shared_conn is None:
+                conn.close()
+
+    def get_claims(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves claims, optionally filtered by project_id."""
+        p_id = None
+        if project_id:
+            proj = self.get_project(project_id)
+            p_id = proj["id"] if proj else project_id
+        conn = self.get_connection()
+        try:
+            if p_id:
+                cur = conn.execute("SELECT * FROM claims WHERE project_id = ? ORDER BY id ASC", (p_id,))
+            else:
+                cur = conn.execute("SELECT * FROM claims ORDER BY id ASC")
             return [dict(r) for r in cur.fetchall()]
         finally:
             if self._shared_conn is None:
@@ -1193,6 +1324,13 @@ class Database:
                     (str(new_spend_wei), new_spend_usd_cents, now, project_id),
                 )
 
+                # Dynamically link VENDOR_PAYMENT to latest OFFRAMP event for this project
+                cur_offramp = conn.execute(
+                    "SELECT event_id FROM flow_events WHERE project_id = ? AND event_type = 'OFFRAMP' ORDER BY created_at DESC, event_id DESC LIMIT 1",
+                    (project_id,),
+                ).fetchone()
+                parent_offramp_id = cur_offramp["event_id"] if cur_offramp else None
+
                 # Flow Event: VENDOR_PAYMENT
                 payment_event_id = f"EVT-PAY-{claim_id}"
                 conn.execute(
@@ -1207,7 +1345,7 @@ class Database:
                         payment_event_id,
                         project_id,
                         "VENDOR_PAYMENT",
-                        "EVT-OFFRAMP-T1",
+                        parent_offramp_id,
                         "USD_CENTS",
                         str(claim_amount),
                         "USD_CENTS",
@@ -1406,10 +1544,17 @@ class Database:
 
                 # Append flow events with unique IDs
                 alloc_event_id = f"EVT-ALLOC-T{next_tranche_number}-{uuid.uuid4().hex[:6].upper()}"
+                swap_event_id = f"EVT-SWAP-T{next_tranche_number}-{uuid.uuid4().hex[:6].upper()}"
                 bridge_event_id = f"EVT-BRIDGE-T{next_tranche_number}-{uuid.uuid4().hex[:6].upper()}"
                 offramp_event_id = f"EVT-OFFRAMP-T{next_tranche_number}-{uuid.uuid4().hex[:6].upper()}"
+
+                # Strict integer conversions:
+                # 1 ETH = 2,000 USD = 200,000 cents
+                # USDC units (6 decimals): 1 ETH = 2,000 * 10^6 units
+                usdc_out_units = (amount_to_release_wei * 2000 * 10**6) // (10**18)
                 usd_cents_out = (amount_to_release_wei * 200000) // (10**18)
 
+                # 1. ALLOCATION (ETH -> ETH)
                 conn.execute(
                     """
                     INSERT INTO flow_events (
@@ -1430,11 +1575,38 @@ class Database:
                         None,
                         1,
                         f"SIMULATED_ALLOCATION:tranche={next_tranche_number}",
-                        json.dumps({"tranche": next_tranche_number}),
+                        json.dumps({"tranche": next_tranche_number, "status": "RELEASED_TO_OPERATING_ACCOUNT"}),
                         now,
                     ),
                 )
 
+                # 2. SWAP (ETH -> USDC)
+                conn.execute(
+                    """
+                    INSERT INTO flow_events (
+                        event_id, project_id, event_type, parent_event_id,
+                        input_asset, input_amount, output_asset, output_amount,
+                        conversion_rate_basis, is_simulated, attestation, metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        swap_event_id,
+                        p_id,
+                        "SWAP",
+                        alloc_event_id,
+                        "ETH",
+                        str(amount_to_release_wei),
+                        "USDC",
+                        str(usdc_out_units),
+                        2000,
+                        1,
+                        f"SIMULATED_SWAP_ATTESTATION:dex=Uniswap_V3_Sim:pair=ETH-USDC:rate=2000:tranche={next_tranche_number}",
+                        json.dumps({"dex": "Uniswap V3 Simulation", "rate": "2000 USDC/ETH", "tranche": next_tranche_number}),
+                        now,
+                    ),
+                )
+
+                # 3. BRIDGE (USDC L1 -> USDC L2)
                 conn.execute(
                     """
                     INSERT INTO flow_events (
@@ -1447,19 +1619,20 @@ class Database:
                         bridge_event_id,
                         p_id,
                         "BRIDGE",
-                        alloc_event_id,
-                        "ETH",
-                        str(amount_to_release_wei),
-                        "ETH",
-                        str(amount_to_release_wei),
+                        swap_event_id,
+                        "USDC",
+                        str(usdc_out_units),
+                        "USDC",
+                        str(usdc_out_units),
                         None,
                         1,
-                        f"SIMULATED_BRIDGE:tx_bridge_t{next_tranche_number}",
-                        json.dumps({"destination_network": "Arbitrum One (Simulated)"}),
+                        f"SIMULATED_BRIDGE_ATTESTATION:relayer=ArbitrumBridge_Sim:tx_bridge_t{next_tranche_number}",
+                        json.dumps({"destination_network": "Arbitrum One (Simulated)", "tranche": next_tranche_number}),
                         now,
                     ),
                 )
 
+                # 4. OFFRAMP (USDC -> USD_CENTS)
                 conn.execute(
                     """
                     INSERT INTO flow_events (
@@ -1473,14 +1646,14 @@ class Database:
                         p_id,
                         "OFFRAMP",
                         bridge_event_id,
-                        "ETH",
-                        str(amount_to_release_wei),
+                        "USDC",
+                        str(usdc_out_units),
                         "USD_CENTS",
                         str(usd_cents_out),
-                        200000,
+                        100,
                         1,
                         f"SIMULATED_OFFRAMP_ATTESTATION:provider=Circle_Sim:ref=sim_offramp_t{next_tranche_number}:status=SETTLED",
-                        json.dumps({"provider": "Circle Mint Simulation"}),
+                        json.dumps({"provider": "Circle Mint Simulation", "settlement_currency": "USD", "tranche": next_tranche_number}),
                         now,
                     ),
                 )
